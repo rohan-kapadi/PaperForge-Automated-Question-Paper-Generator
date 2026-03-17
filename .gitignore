@@ -10,3 +10,5 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 *.docx
+apps/frontend/package-lock.json
+apps/backend-api/package-lock.json
