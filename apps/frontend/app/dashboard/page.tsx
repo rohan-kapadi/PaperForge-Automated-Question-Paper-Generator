@@ -5,6 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Database, FileQuestion, FileText, Activity, ArrowRight, Upload, Sparkles, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
 
 const container = {
     hidden: { opacity: 0 },
@@ -22,6 +25,16 @@ const item = {
 };
 
 export default function DashboardPage() {
+    const [user, setUser] = useState<User | null>(null);
+
+    useEffect(() => {
+        const getUser = async () => {
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            setUser(authUser);
+        };
+        getUser();
+    }, []);
+
     const stats = [
         {
             icon: Database,
@@ -98,7 +111,10 @@ export default function DashboardPage() {
             <motion.div variants={item} className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-bold text-white mb-1">Overview</h2>
-                    <p className="text-slate-400">Welcome back, Dr. Sharma. Here&apos;s what&apos;s happening.</p>
+                    <p className="text-slate-400">
+                        Welcome back, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}. 
+                        Here&apos;s what&apos;s happening.
+                    </p>
                 </div>
                 <div className="flex space-x-3">
                     <Link href="/dashboard/auto">

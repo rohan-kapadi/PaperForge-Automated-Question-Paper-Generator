@@ -1,0 +1,21 @@
+
+> frontend@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by process 3986, using available port 3002 instead.
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/swarajvijaykarle/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /Users/swarajvijaykarle/Desktop/paperfog/PaperForge-Automated-Question-Paper-Generator/apps/frontend/package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3002
+- Network:       http://192.168.1.43:3002
+- Environments: .env.local
+
+✓ Starting...
+⨯ Unable to acquire lock at /Users/swarajvijaykarle/Desktop/paperfog/PaperForge-Automated-Question-Paper-Generator/apps/frontend/.next/dev/lock, is another instance of next dev running?
+  Suggestion: If you intended to restart next dev, terminate the other process, and then try again.
+[?25h

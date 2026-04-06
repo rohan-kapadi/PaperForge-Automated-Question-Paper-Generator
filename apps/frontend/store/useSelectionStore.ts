@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { Question } from '@/lib/mockData';
+
+export interface Question {
+    id: string;
+    question_text: string;
+    subject: string;
+    marks?: number;
+    difficulty?: string;
+}
 
 interface SelectionStore {
     selectedQuestions: Question[];
@@ -27,7 +34,7 @@ export const useSelectionStore = create<SelectionStore>((set, get) => ({
 
     totalMarks: () => {
         const state = get();
-        return state.selectedQuestions.reduce((sum, q) => sum + q.marks, 0);
+        return state.selectedQuestions.reduce((sum, q) => sum + (q.marks || 5), 0);
     },
 
     isSelected: (questionId) => {

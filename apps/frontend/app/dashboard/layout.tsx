@@ -20,6 +20,9 @@ import {
     X,
     User
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { User as SupabaseUser } from '@supabase/supabase-js';
+import { useEffect } from 'react';
 
 const menuItems = [
     { icon: LayoutDashboard, label: 'Overview', href: '/dashboard' },
@@ -37,8 +40,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const pathname = usePathname();
     const router = useRouter();
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [user, setUser] = useState<SupabaseUser | null>(null);
 
-    const handleLogout = () => {
+    useEffect(() => {
+        const getUser = async () => {
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            if (!authUser) {
+                router.push('/login');
+                return;
+            }
+            setUser(authUser);
+        };
+        getUser();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!session) {
+                router.push('/login');
+            } else {
+                setUser(session.user);
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
+    }, [router]);
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
         router.push('/login');
     };
 
@@ -122,8 +151,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                         <User className="w-5 h-5 text-amber-500" />
                                     </div>
                                     <div className="text-sm">
-                                        <p className="font-medium text-white">Dr. Sharma</p>
-                                        <p className="text-xs text-slate-500">Free Plan</p>
+                                        <p className="font-medium text-white truncate max-w-[120px]">
+                                            {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+                                        </p>
+                                        <p className="text-xs text-slate-500 truncate max-w-[120px]">
+                                            {user?.email || 'Logged In'}
+                                        </p>
                                     </div>
                                 </div>
                             )}

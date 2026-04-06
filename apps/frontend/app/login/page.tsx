@@ -6,17 +6,36 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText } from 'lucide-react';
+import { FileText, Loader2, AlertCircle } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { Badge } from '@/components/ui/badge';
 
 export default function LoginPage() {
     const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // Mock login - redirect to dashboard
-        router.push('/dashboard');
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const { error: authError } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            if (authError) throw authError;
+
+            router.push('/dashboard');
+        } catch (err: any) {
+            setError(err.message || 'Failed to login. Please check your credentials.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -38,6 +57,12 @@ export default function LoginPage() {
                         <CardDescription className="text-center text-slate-400">
                             Enter your credentials to access your account
                         </CardDescription>
+                        {error && (
+                            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center space-x-2 text-red-400 text-sm animate-in fade-in slide-in-from-top-1">
+                                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                                <span>{error}</span>
+                            </div>
+                        )}
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-4">
@@ -81,8 +106,20 @@ export default function LoginPage() {
                                 </a>
                             </div>
 
-                            <Button type="submit" className="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold h-11" size="lg">
-                                Login
+                            <Button 
+                                type="submit" 
+                                className="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold h-11" 
+                                size="lg"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Logging in...
+                                    </>
+                                ) : (
+                                    'Login'
+                                )}
                             </Button>
                         </form>
 
