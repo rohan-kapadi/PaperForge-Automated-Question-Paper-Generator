@@ -6,6 +6,7 @@ export interface Question {
     subject: string;
     marks?: number;
     difficulty?: string;
+    bank_id?: string;
 }
 
 interface SelectionStore {

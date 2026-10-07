@@ -4,7 +4,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Upload, FileSpreadsheet, CheckCircle, Clock, X, CloudUpload, AlertCircle, FileText, FileUp } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, Clock, Trash2, CloudUpload, AlertCircle, FileText, FileUp, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 
 const BACKEND_URL = 'http://localhost:3001';
 
@@ -124,9 +125,23 @@ export default function UploadPage() {
 
     return (
         <div className="space-y-8 max-w-5xl mx-auto">
-            <div>
-                <h2 className="text-3xl font-bold text-white mb-2">Upload Question Bank</h2>
-                <p className="text-slate-400">Import your questions from PDF, DOCX, Excel, or CSV files.</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h2 className="text-3xl font-bold text-white mb-1">Upload Question Bank</h2>
+                    <p className="text-slate-400">Import questions from PDF, DOCX, Excel, or CSV files.</p>
+                </div>
+                <div className="flex space-x-3">
+                    <Link href="/dashboard/banks">
+                        <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-300 hover:text-white">
+                            View Question Banks
+                        </Button>
+                    </Link>
+                    <Link href="/dashboard/generate">
+                        <Button className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold">
+                            <Sparkles className="w-4 h-4 mr-1.5" /> Generate Paper
+                        </Button>
+                    </Link>
+                </div>
             </div>
 
             {/* Drop Zone */}
@@ -241,9 +256,10 @@ export default function UploadPage() {
                                                         console.error('Failed to delete from backend', err);
                                                     }
                                                 }}
-                                                className="text-slate-600 hover:text-red-400 transition-colors p-1"
+                                                className="text-slate-600 hover:text-red-400 transition-colors p-2 bg-slate-900 border border-slate-800 rounded-md shadow-sm hover:border-red-500/30 hover:bg-red-500/10"
+                                                title="Delete bank and all questions"
                                             >
-                                                <X className="w-4 h-4" />
+                                                <Trash2 className="w-4 h-4" />
                                             </button>
                                         </div>
                                     </div>

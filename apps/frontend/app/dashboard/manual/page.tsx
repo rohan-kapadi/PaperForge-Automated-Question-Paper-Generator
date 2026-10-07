@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useSelectionStore, Question } from '@/store/useSelectionStore';
-import { Search, Plus, Trash2, Save, FileCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { Search, Plus, Trash2, Save, FileCheck, AlertCircle, Loader2, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
+import { mockBlueprints, Blueprint } from '@/lib/mockData';
 
 const BACKEND_URL = 'http://localhost:3001';
 
@@ -17,28 +19,40 @@ export default function ManualSelectionPage() {
     const [questions, setQuestions] = useState<Question[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [step, setStep] = useState<1 | 2 | 3>(1);
+    const [selectedBlueprint, setSelectedBlueprint] = useState<Blueprint | null>(null);
+    const [banks, setBanks] = useState<any[]>([]);
+    const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
 
     useEffect(() => {
-        const fetchQuestions = async () => {
+        const fetchAll = async () => {
             try {
-                const res = await fetch(`${BACKEND_URL}/questions`);
-                if (!res.ok) throw new Error('Failed to fetch questions');
-                const data = await res.json();
-                setQuestions(data);
+                const [resQ, resB] = await Promise.all([
+                    fetch(`${BACKEND_URL}/questions`),
+                    fetch(`${BACKEND_URL}/questions/banks`)
+                ]);
+                if (resQ.ok) setQuestions(await resQ.json());
+                if (resB.ok) setBanks(await resB.json());
             } catch (err) {
                 console.error(err);
             } finally {
                 setIsLoading(false);
             }
         };
-        fetchQuestions();
+        fetchAll();
     }, []);
 
     const filteredQuestions = questions.filter(q => {
         const textToSearch = q.question_text || '';
         const subjectToSearch = q.subject || '';
-        return textToSearch.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        
+        const matchesSearch = textToSearch.toLowerCase().includes(searchTerm.toLowerCase()) ||
             subjectToSearch.toLowerCase().includes(searchTerm.toLowerCase());
+            
+        // Strict bank ID matching
+        const matchesBank = selectedBankIds.length === 0 || (q.bank_id && selectedBankIds.includes(q.bank_id));
+
+        return matchesSearch && matchesBank;
     });
 
     const getDifficultyColor = (difficulty?: string) => {
@@ -50,6 +64,156 @@ export default function ManualSelectionPage() {
         }
     };
 
+    if (step === 1) {
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col space-y-6 h-full p-4"
+            >
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between text-xs text-amber-300">
+                    <span className="flex items-center">
+                        <Sparkles className="w-4 h-4 mr-2 text-amber-400 flex-shrink-0" />
+                        <span>Tip: Manual question selection is now integrated directly into the new <strong>Generate Paper</strong> wizard.</span>
+                    </span>
+                    <Link href="/dashboard/generate">
+                        <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold h-7 text-xs ml-3">
+                            Open Wizard <ArrowRight className="w-3 h-3 ml-1" />
+                        </Button>
+                    </Link>
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold text-white">Select Blueprint</h2>
+                    <p className="text-slate-400 text-sm">Choose a blueprint before manually selecting questions.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {mockBlueprints.map((bp) => (
+                        <Card 
+                            key={bp.id} 
+                            className={cn("cursor-pointer border-2 transition-all bg-slate-900/50 hover:bg-slate-900/80", selectedBlueprint?.id === bp.id ? "border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "border-slate-800")}
+                            onClick={() => setSelectedBlueprint(bp)}
+                        >
+                            <CardHeader>
+                                <CardTitle className="text-white">{bp.name}</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <ul className="space-y-2 text-sm text-slate-400">
+                                    {bp.sections.map(s => (
+                                        <li key={s.id} className="flex justify-between">
+                                            <span>{s.name} ({s.numberOfQuestions} × {s.marksPerQuestion}m)</span>
+                                            <span className="text-slate-300 font-medium">{s.totalMarks}m</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center text-sm">
+                                    <span className="text-slate-500">Total Marks</span>
+                                    <span className="text-amber-500 font-bold text-lg">
+                                        {bp.sections.reduce((acc, s) => acc + s.totalMarks, 0)}
+                                    </span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+                <div className="flex justify-end pt-4">
+                    <Button 
+                        disabled={!selectedBlueprint}
+                        className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
+                        onClick={() => setStep(2)}
+                    >
+                        Continue to Questions <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                </div>
+            </motion.div>
+        );
+    }
+
+    if (step === 2) {
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col space-y-6 h-full p-4"
+            >
+                <div className="flex items-center space-x-4">
+                    <Button variant="outline" size="icon" onClick={() => setStep(1)} className="border-slate-800 bg-slate-900/50 hover:bg-slate-800 hover:text-white">
+                        <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                    <div>
+                        <h2 className="text-2xl font-bold text-white">Select Question Banks</h2>
+                        <p className="text-slate-400 text-sm">Choose which question banks to source questions from.</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {banks.length === 0 && !isLoading && (
+                        <div className="col-span-full py-12 text-center border-2 border-dashed border-slate-800 rounded-xl bg-slate-900/20">
+                            <p className="text-slate-400">No question banks found. You can skip this step.</p>
+                        </div>
+                    )}
+                    {banks.map((bank: any) => {
+                        const isSelected = selectedBankIds.includes(bank.id);
+                        return (
+                            <Card 
+                                key={bank.id} 
+                                className={cn("cursor-pointer border-2 transition-all bg-slate-900/50 hover:bg-slate-900/80", isSelected ? "border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "border-slate-800")}
+                                onClick={() => {
+                                    if (isSelected) {
+                                        setSelectedBankIds(prev => prev.filter(id => id !== bank.id));
+                                    } else {
+                                        setSelectedBankIds(prev => [...prev, bank.id]);
+                                    }
+                                }}
+                            >
+                                <CardHeader className="pb-3 border-b border-slate-800/50">
+                                    <div className="flex justify-between items-start">
+                                        <CardTitle className="text-base text-white line-clamp-1" title={bank.name}>{bank.name}</CardTitle>
+                                        <div className="flex space-x-2 items-center">
+                                            {isSelected && <FileCheck className="w-4 h-4 text-amber-500 flex-shrink-0" />}
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm(`Are you sure you want to delete ${bank.name}? This will delete all associated questions.`)) {
+                                                        try {
+                                                            await fetch(`${BACKEND_URL}/questions/banks/${bank.id}`, { method: 'DELETE' });
+                                                            setBanks(prev => prev.filter(b => b.id !== bank.id));
+                                                            setSelectedBankIds(prev => prev.filter(id => id !== bank.id));
+                                                        } catch (err) {
+                                                            console.error('Failed to delete from backend', err);
+                                                        }
+                                                    }
+                                                }}
+                                                className="text-slate-500 hover:text-red-400 p-1.5 rounded-md hover:bg-red-500/10 transition-colors"
+                                                title="Delete Bank and its questions"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <Badge className="w-fit text-slate-300 border-slate-700 bg-slate-800 mt-2">{bank.subject || 'General'}</Badge>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-xs text-slate-500">Uploaded {bank.created_at ? new Date(bank.created_at).toLocaleDateString() : 'N/A'}</p>
+                                </CardContent>
+                            </Card>
+                        )
+                    })}
+                </div>
+
+                <div className="flex justify-end pt-4">
+                    <Button 
+                        className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
+                        onClick={() => setStep(3)}
+                    >
+                        {selectedBankIds.length > 0 ? "Continue to Questions" : "Skip & Continue"} <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                </div>
+            </motion.div>
+        );
+    }
+
+    const targetTotalMarks = selectedBlueprint?.sections.reduce((acc, s) => acc + s.totalMarks, 0) || 0;
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
@@ -59,9 +223,14 @@ export default function ManualSelectionPage() {
 
             {/* Left Column: Question Browser */}
             <div className="lg:col-span-7 flex flex-col h-full space-y-4">
-                <div>
-                    <h2 className="text-2xl font-bold text-white">Question Browser</h2>
-                    <p className="text-slate-400 text-sm">Select questions to add to your paper manually.</p>
+                <div className="flex items-center space-x-4">
+                    <Button variant="outline" size="icon" onClick={() => setStep(2)} className="border-slate-800 bg-slate-900/50 hover:bg-slate-800 hover:text-white">
+                        <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                    <div>
+                        <h2 className="text-2xl font-bold text-white">Question Browser</h2>
+                        <p className="text-slate-400 text-sm">Select questions for: <span className="text-amber-400">{selectedBlueprint?.name}</span></p>
+                    </div>
                 </div>
 
                 {/* Search Bar */}
@@ -144,7 +313,9 @@ export default function ManualSelectionPage() {
                                 <CardDescription className="text-slate-400">{selectedQuestions.length} questions selected</CardDescription>
                             </div>
                             <div className="text-right">
-                                <div className="text-3xl font-bold text-amber-500">{totalMarks() || 0}</div>
+                                <div className="text-3xl font-bold text-amber-500">
+                                    {totalMarks() || 0} <span className="text-lg text-slate-500 font-normal">/ {targetTotalMarks}</span>
+                                </div>
                                 <div className="text-xs text-slate-500 uppercase tracking-wider">Total Marks</div>
                             </div>
                         </div>
@@ -190,10 +361,10 @@ export default function ManualSelectionPage() {
                             </Button>
                             <Button
                                 className="flex-[2] bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold shadow-lg shadow-amber-500/20 disabled:opacity-50"
-                                disabled={selectedQuestions.length === 0}
+                                disabled={selectedQuestions.length === 0 || totalMarks() !== targetTotalMarks}
                             >
                                 <Save className="w-4 h-4 mr-2" />
-                                Save Paper
+                                {totalMarks() === targetTotalMarks ? "Save Paper" : "Match Marks"}
                             </Button>
                         </div>
                     </div>

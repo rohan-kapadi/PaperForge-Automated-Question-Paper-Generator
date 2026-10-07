@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Calculator, Save, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Calculator, Save, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
 export default function BlueprintBuilderPage() {
     const [sections, setSections] = useState([
@@ -43,12 +44,20 @@ export default function BlueprintBuilderPage() {
         <div className="space-y-8 max-w-5xl mx-auto">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-white mb-2">Blueprint Builder</h2>
+                    <h2 className="text-3xl font-bold text-white mb-1">Blueprint Builder</h2>
                     <p className="text-slate-400">Define the structure and marking scheme of your exam.</p>
                 </div>
-                <div className="bg-slate-900 border border-slate-800 rounded-xl px-6 py-3 flex items-center space-x-4 shadow-lg">
-                    <span className="text-sm text-slate-400 font-medium uppercase tracking-wider">Total Marks</span>
-                    <span className="text-2xl font-bold text-amber-500">{grandTotal}</span>
+                <div className="flex items-center space-x-3">
+                    <Link href="/dashboard/blueprints">
+                        <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-300 hover:text-white">
+                            View All Blueprints
+                        </Button>
+                    </Link>
+                    <Link href="/dashboard/generate">
+                        <Button className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold">
+                            <Sparkles className="w-4 h-4 mr-1.5" /> Generate Paper
+                        </Button>
+                    </Link>
                 </div>
             </div>
 
