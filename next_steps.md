@@ -227,58 +227,157 @@ CREATE POLICY "Owner Access Users"
 
 ---
 
-## PHASE 3 — Real PDF & DOCX Export
+## PHASE 3 — Official Autonomous Paper Format & Balanced "OR" Choice Engine
 
-**Goal:** The "Print / Export" button must produce a real, properly formatted downloadable file — not just `window.print()`.
+**Goal:** Transform the generation pipeline to produce the official accredited college examination paper format (`REUT_PAPER_Format _Final.docx`): institutional logos, 3-column header boxes, Course Outcomes (CO) table, Sub-Questions (Q1 A, B, C), and strictly balanced "OR" choice pairs (Q1 OR Q2, Q3 OR Q4) with difficulty parity.
 
 ---
 
-### Step 3.1 — Backend PDF generation endpoint
+### Step 3.1 — Autonomous Exam Metadata & Header Collection
 
-**Context:** The `generated_papers` table has `pdf_url TEXT` and `docx_url TEXT` columns — always `null` currently. The preview modal calls `window.print()` which is unreliable and produces unformatted output.
+**Context:** The official college paper format requires extensive institutional metadata that must be collected during generation and formatted into the document:
+- **Institute Header:** PCET & PCCOER logos, autonomous status, NAAC A++ / NBA accreditation lines, IQAC cell.
+- **Top Header Box:** Academic Year (e.g. `2025 – 26`), Term (`II`), Exam Type (`UNIT TEST`), Record No (`ACAD/R/11`).
+- **Subject & Batch Info:** Department (`Computer Engineering`), Class (`SE`), Div (`A, B, C, D, E, F`), Subject (`Database Management Systems`), Subject Code (`PCC-251-COM`), Maximum Marks (`30`), Duration (`1 hr.`), Exam Date (`16/02/2026`).
+- **Dynamic Notes:** Auto-generated instructions based on choice structure:
+  - *"1. Solve Que.1 or Que.2 and Que.3 or Que.4."*
+  - *"2. Give explanation or justification wherever required."*
+- **Course Outcomes (CO) Mapping:** Configurable CO table with columns: `[ CO | Course Outcomes | BT Level ]` (e.g., `P251.1 | Design DBMS using ER model | BT 6`).
 
-**Files to create/edit:**
-- `apps/backend-api/src/papers/papers.service.ts` — add `exportToPdf(id: string)` method
-- `apps/backend-api/src/papers/papers.controller.ts` — add `GET /papers/:id/export/pdf`
+**Files to edit:**
+- `apps/frontend/app/dashboard/generate/page.tsx` — add "Autonomous College Header" form in Step 3
+- `apps/frontend/lib/types.ts` — add `ExamPaperHeader`, `CourseOutcome`, and `SubQuestion` interfaces
+- `apps/backend-api/src/papers/papers.service.ts` — persist header and CO metadata in `generated_papers.content`
 
 **Actions:**
-1. Install in `apps/backend-api`: `npm install pdfmake @types/pdfmake`
-2. In `PapersService.exportToPdf()`:
-   - Fetch the paper from `generated_papers` by ID.
-   - Read institution settings from the `institution_settings` table (Phase 4.1) or use defaults.
-   - Build a `pdfmake` document definition:
-     - Header: institution name, affiliation line, exam title, subject code, duration, max marks, set name
-     - Instructions block
-     - For each section: section name, question count, per-question marks
-     - Numbered questions with marks annotation in the right margin
-     - Footer: page number
-   - Return as `Buffer`.
-3. In `PapersController`:
+1. In `apps/frontend/lib/types.ts`, define:
    ```ts
-   @Get(':id/export/pdf')
-   async exportPdf(@Param('id') id: string, @Res() res: Response) {
-     const buf = await this.papersService.exportToPdf(id);
-     res.set({
-       'Content-Type': 'application/pdf',
-       'Content-Disposition': `attachment; filename="exam-paper-${id}.pdf"`
-     });
-     res.send(buf);
+   export interface CourseOutcome {
+     co: string;
+     desc: string;
+     bt: string;
+   }
+
+   export interface ExamPaperHeader {
+     academic_year: string;
+     term: string;
+     exam_type: string;
+     record_no: string;
+     department: string;
+     class: string;
+     div: string;
+     subject_name: string;
+     subject_code: string;
+     max_marks: number;
+     duration: string;
+     date: string;
+     instructions: string[];
+     course_outcomes: CourseOutcome[];
    }
    ```
-4. Optionally, upload the generated PDF buffer to Supabase Storage bucket `exam-papers` and save the public URL to `generated_papers.pdf_url`.
-5. In `apps/frontend/app/dashboard/generated/page.tsx`, replace the `window.print()` call with a fetch to `/papers/:id/export/pdf` and trigger a browser download using a blob URL.
-
-**Security Rule:** Only authenticated users with role Teacher, HOD, or Admin may export papers. Add JWT guard.
+2. In `generate/page.tsx` Step 3 (Configure): Add an expandable "College Format Details" panel with pre-filled defaults (from Institution Settings) allowing teachers to customize Subject Code, Class, Div, Date, Term, and Record No.
 
 ---
 
-### Step 3.2 — DOCX Export
+### Step 3.2 — Sub-Question Hierarchy & Balanced "OR" Choice Engine
+
+**Context:** Autonomous examinations do not ask single isolated questions; they structure exams into Question Groups with internal sub-questions and balanced alternatives:
+- **Structure:** Main Que 1 has Sub-Questions `A`, `B`, `C` (e.g., 5 marks each = 15 marks total).
+- **Choice Pairing:** Que 1 is paired with Que 2 via an **"OR"** separator; Que 3 is paired with Que 4 via an **"OR"** separator.
+- **Difficulty & Bloom's Parity Rule:** When generating Que 2 as an alternative to Que 1:
+  - Total marks must be identical (15M vs 15M).
+  - Sub-question mark breakdown must match (5M / 5M / 5M).
+  - Target Course Outcome (CO) and syllabus scope must match (e.g., both Que 1 and Que 2 test Unit 1 & Unit 2 under `P251.1`).
+  - Cognitive level (Bloom's Taxonomy) and difficulty distribution across sub-questions must be strictly balanced (e.g. if Que 1 is 1 Easy + 2 Medium, Que 2 must also be 1 Easy + 2 Medium).
+  - Neither option is unfairly advantageous or disadvantageous.
+
+**Files to edit:**
+- `apps/backend-api/src/papers/papers.service.ts` — implement paired section generator
+- `apps/frontend/components/CollegeQuestionPaper.tsx` — render 5-column table (`[Que | Sub Que. | Questions | Marks/CO/BTL | PI]`) with merged "OR" separator rows
+- `apps/frontend/app/dashboard/generate/page.tsx` — connect the generator to produce paired question sets
+
+**Backend Implementation in `PapersService`:**
+```ts
+// Generate paired choice questions with difficulty & Bloom's parity:
+async generatePairedQuestionGroup(
+  pool: Question[],
+  co: string,
+  targetMarks: number = 15,
+  subQuestionCount: number = 3,
+  targetDifficulty: string = 'Balanced'
+) {
+  // 1. Pick Sub-Questions A, B, C for Que 1
+  const q1_subs = this.pickSubQuestions(pool, co, subQuestionCount, 5, targetDifficulty);
+  const usedIds = new Set(q1_subs.map(q => q.id));
+
+  // 2. Mirror exact marks, Bloom's, and difficulty for Que 2 (Alternative)
+  const remainingPool = pool.filter(q => !usedIds.has(q.id));
+  const q2_subs = q1_subs.map(q1_sub => {
+    return this.findMatchingCandidate(remainingPool, {
+      marks: q1_sub.marks,
+      difficulty: q1_sub.difficulty,
+      blooms_level: q1_sub.blooms_level,
+      unit: q1_sub.unit
+    }) || remainingPool.pop();
+  });
+
+  return { q1: q1_subs, q2: q2_subs };
+}
+```
+
+---
+
+### Step 3.3 — Official DOCX Exporter matching `REUT_PAPER_Format _Final.docx`
+
+**Context:** Teachers currently spend hours formatting Word tables. The system must automatically produce a downloadable `.docx` identical to `REUT_PAPER_Format _Final.docx`.
+
+**Files to edit:**
+- `apps/parser-service/pccoer_exporter.py` — complete the official docx template writer
+- `apps/backend-api/src/papers/papers.controller.ts` — proxy export stream from parser service
+- `apps/frontend/app/dashboard/generate/page.tsx` — 1-click "Export Word (.docx)" button
+- `apps/frontend/app/dashboard/generated/page.tsx` — download action on archived papers
+
+**DOCX Template Specifications:**
+1. **Header Layout:** 2-row x 3-column table with 0-padding:
+   - Cell (0,0): Embedded PCET Trust Logo (`pcet_logo.png`)
+   - Cell (0,1): Centered institutional typography (PCET Trust, PCCOER College, Autonomous status, NAAC A++, IQAC)
+   - Cell (0,2): Embedded PCCOER College Logo (`pccoer_logo.png`)
+   - Cell (1,0): `Academic Year: 2025 – 26\nTerm: II`
+   - Cell (1,1): Bold Centered Title `UNIT TEST` (14pt, Times New Roman)
+   - Cell (1,2): `Record No.: ACAD/R/11`
+2. **Metadata Rows:** 3 compact tabular lines:
+   - Line 1: `Department: Computer Engineering   Class: SE   Div.: A, B, C, D, E, F`
+   - Line 2: `Subject: Database Management Systems   Maximum Marks: 30   Duration: 1 hr.`
+   - Line 3: `Subject Code: PCC-251-COM   Date: 16/02/2026`
+3. **Instructions Block:** Numbered notes with dynamic choice text: *"Note: 1. Solve Que.1 or Que.2 and Que.3 or Que.4."*
+4. **Course Outcomes Table:** 3-column table with thin black borders (`CO`, `Course Outcomes`, `BT Level`).
+5. **Questions Table:** 5 columns:
+   - `Que` (w: 0.6 in, centered vertically)
+   - `Sub Que.` (w: 0.6 in, `A`, `B`, `C`)
+   - `Questions` (w: 4.2 in, left-aligned, supports embedded images/diagrams)
+   - `Marks/ CO/BTL` (w: 1.1 in, centered, e.g. `(Marks-05)\n[P251.1]\nBT6`)
+   - `PI` (w: 1.0 in, Performance Indicators, e.g. `1.3.1, 2.3.1\n3.4.1, 4.2.1`)
+   - **OR Separator Row:** Merged across all 5 columns with bold centered text `OR`.
+6. **Footer:** On all pages: `Rev.: 00   Date: 01-09-2025` (left) and `Page X of Y` (right).
+
+---
+
+### Step 3.4 — Interactive College Canvas in Frontend (`CollegeQuestionPaper.tsx`)
+
+**Context:** The generated paper preview must render as a true WYSIWYG paper preview inside the browser so teachers can see exactly how it will print and export before downloading.
+
+**Files to edit:**
+- `apps/frontend/components/CollegeQuestionPaper.tsx`
+- `apps/frontend/app/dashboard/generate/page.tsx` (Step 5 Review)
+- `apps/frontend/app/dashboard/generated/page.tsx` (Archive Preview Modal)
 
 **Actions:**
-1. Install: `npm install docx` in `apps/backend-api`.
-2. Implement `exportToDocx(id: string)` in `PapersService` using the `docx` library.
-3. Expose `GET /papers/:id/export/docx`.
-4. In the frontend, add a "Download DOCX" button alongside the PDF button.
+1. Connect `<CollegeQuestionPaper>` directly into Step 5 of the Generate Wizard.
+2. Provide interactive toolbar for teachers:
+   - **Replace Sub-Question:** Click replace on Sub-question `1B` to browse questions matching 5 marks and BT level.
+   - **Edit Question Text:** Inline editing of question wording or mathematical expressions.
+   - **Print / PDF:** Uses browser print styling optimized for clean 2-page print without navigation bars or UI chrome.
+   - **Export Word (.docx):** Streams real DOCX generated by FastAPI `pccoer_exporter.py`.
 
 ---
 
