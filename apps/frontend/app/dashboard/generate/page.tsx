@@ -33,10 +33,12 @@ import {
     Check,
     CloudUpload
 } from 'lucide-react';
-import { mockQuestions, mockBlueprints, Blueprint, Question as MockQuestion, mockGeneratedPapers } from '@/lib/mockData';
+import { Blueprint, Question } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (id?: string) => !!id && UUID_REGEX.test(id);
 
 interface QuestionBank {
     id: string;
@@ -85,7 +87,7 @@ function GeneratePaperContent() {
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
     // Step 2: Blueprints
-    const [blueprints, setBlueprints] = useState<Blueprint[]>(mockBlueprints);
+    const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
     const [selectedBlueprint, setSelectedBlueprint] = useState<Blueprint | null>(null);
     const [blueprintMode, setBlueprintMode] = useState<'existing' | 'create' | 'ai'>('existing');
     const [newBpTitle, setNewBpTitle] = useState('');
@@ -107,8 +109,9 @@ function GeneratePaperContent() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [generationProgress, setGenerationProgress] = useState(0);
     const [generationStatusText, setGenerationStatusText] = useState('');
+    const [generationError, setGenerationError] = useState<string | null>(null);
     const [paperSections, setPaperSections] = useState<PaperSection[]>([]);
-    const [allAvailableQuestions, setAllAvailableQuestions] = useState<MockQuestion[]>([]);
+    const [allAvailableQuestions, setAllAvailableQuestions] = useState<Question[]>([]);
 
     // Replacement Modal in Step 5
     const [replaceModal, setReplaceModal] = useState<{
@@ -147,18 +150,13 @@ function GeneratePaperContent() {
 
                 if (resBanks && resBanks.ok) {
                     const data = await resBanks.json();
-                    setBanks(data);
+                    setBanks(data || []);
                     if (paramBankId) {
-                        const found = data.find((b: any) => b.id === paramBankId);
+                        const found = (data || []).find((b: any) => b.id === paramBankId);
                         if (found) setSelectedBank(found);
                     }
                 } else {
-                    // Fallback initial bank
-                    setBanks([
-                        { id: 'b1', name: 'DBMS_Comprehensive_Question_Bank.xlsx', subject: 'Database Management Systems', file_type: 'XLSX', questions_count: 324 },
-                        { id: 'b2', name: 'Operating_Systems_Question_Bank.pdf', subject: 'Operating Systems', file_type: 'PDF', questions_count: 281 },
-                        { id: 'b3', name: 'Computer_Networks_Unit_Tests.docx', subject: 'Computer Networks', file_type: 'DOCX', questions_count: 198 }
-                    ]);
+                    setBanks([]);
                 }
 
                 if (resBlueprints && resBlueprints.ok) {
@@ -176,7 +174,11 @@ function GeneratePaperContent() {
                             })),
                         }));
                         setBlueprints(formattedBps);
+                    } else {
+                        setBlueprints([]);
                     }
+                } else {
+                    setBlueprints([]);
                 }
 
                 if (resQuestions && resQuestions.ok) {
@@ -192,14 +194,16 @@ function GeneratePaperContent() {
                         }));
                         setAllAvailableQuestions(formatted);
                     } else {
-                        setAllAvailableQuestions(mockQuestions);
+                        setAllAvailableQuestions([]);
                     }
                 } else {
-                    setAllAvailableQuestions(mockQuestions);
+                    setAllAvailableQuestions([]);
                 }
             } catch (err) {
-                console.error(err);
-                setAllAvailableQuestions(mockQuestions);
+                console.error('Fetch initial data error:', err);
+                setBanks([]);
+                setBlueprints([]);
+                setAllAvailableQuestions([]);
             } finally {
                 setIsLoadingBanks(false);
             }
@@ -323,26 +327,26 @@ function GeneratePaperContent() {
 
     // Blueprint total marks
     const targetBlueprintMarks = selectedBlueprint
-        ? selectedBlueprint.sections.reduce((acc, s) => acc + s.totalMarks, 0)
+        ? selectedBlueprint.sections.reduce((acc: number, s: any) => acc + (s.totalMarks || 0), 0)
         : 50;
 
     // Step 4: Run Paper Generation
     const executeGeneration = async () => {
         setIsGenerating(true);
+        setGenerationError(null);
         setGenerationProgress(15);
         setGenerationStatusText('Selecting questions from source question bank...');
 
         setTimeout(() => {
             setGenerationProgress(45);
-            setGenerationStatusText('Balancing difficulty ratios (30% Easy, 50% Medium, 20% Hard)...');
-        }, 500);
+            setGenerationStatusText('Balancing difficulty ratios according to preset...');
+        }, 400);
 
         setTimeout(() => {
             setGenerationProgress(75);
             setGenerationStatusText('Allocating marks according to blueprint section constraints...');
-        }, 1000);
+        }, 800);
 
-        // Attempt Real Backend Generation
         try {
             const payload: any = {
                 title: `${subjectName} - ${examName}`,
@@ -352,13 +356,13 @@ function GeneratePaperContent() {
             };
 
             if (selectedBlueprint) {
-                if (!selectedBlueprint.id.startsWith('bp-') && !selectedBlueprint.id.startsWith('bp_')) {
+                if (isUuid(selectedBlueprint.id)) {
                     payload.blueprint_id = selectedBlueprint.id;
                 } else {
                     payload.blueprint = {
                         id: selectedBlueprint.id,
                         title: selectedBlueprint.name,
-                        sections: selectedBlueprint.sections.map(s => ({
+                        sections: selectedBlueprint.sections.map((s: any) => ({
                             id: s.id,
                             name: s.name,
                             marks_per_question: s.marksPerQuestion,
@@ -369,7 +373,7 @@ function GeneratePaperContent() {
                 }
             }
 
-            if (selectedBank && !selectedBank.id.startsWith('b-local-') && !selectedBank.id.startsWith('b1') && !selectedBank.id.startsWith('b2') && !selectedBank.id.startsWith('b3')) {
+            if (selectedBank && isUuid(selectedBank.id)) {
                 payload.bank_id = selectedBank.id;
             }
 
@@ -389,52 +393,16 @@ function GeneratePaperContent() {
                 setIsGenerating(false);
                 setStep(5);
                 return;
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || `Generation failed (${res.status} ${res.statusText})`);
             }
-        } catch (apiErr) {
-            console.warn('Real backend generation unavailable or errored; using local generator:', apiErr);
-        }
-
-        // Local fallback synthesis
-        setTimeout(() => {
-            const sourcePool = allAvailableQuestions.length > 0 ? allAvailableQuestions : mockQuestions;
-            const sectionsToBuild = selectedBlueprint?.sections || [
-                { id: 's1', name: 'Section A - Short Answer', marksPerQuestion: 3, numberOfQuestions: 5, totalMarks: 15 },
-                { id: 's2', name: 'Section B - Long Answer', marksPerQuestion: 7, numberOfQuestions: 3, totalMarks: 21 },
-            ];
-
-            const assembled: PaperSection[] = sectionsToBuild.map((sec, secIdx) => {
-                const matchingQuestions = sourcePool.filter(q => {
-                    return q.marks === sec.marksPerQuestion || Math.abs(q.marks - sec.marksPerQuestion) <= 2;
-                });
-
-                const pool = matchingQuestions.length >= sec.numberOfQuestions
-                    ? matchingQuestions
-                    : sourcePool;
-
-                const picked = pool
-                    .slice(secIdx * 4, secIdx * 4 + sec.numberOfQuestions)
-                    .map((q, qIdx) => ({
-                        id: q.id || `q-${secIdx}-${qIdx}`,
-                        text: q.text,
-                        marks: sec.marksPerQuestion,
-                        difficulty: q.difficulty || (qIdx % 2 === 0 ? 'Medium' : 'Easy'),
-                        topic: q.unit || `Unit ${(qIdx % 4) + 1}`,
-                        blooms_level: qIdx % 3 === 0 ? 'Apply' : qIdx % 3 === 1 ? 'Analyze' : 'Understand'
-                    }));
-
-                return {
-                    id: sec.id,
-                    name: sec.name,
-                    marksPerQuestion: sec.marksPerQuestion,
-                    targetCount: sec.numberOfQuestions,
-                    questions: picked
-                };
-            });
-
-            setPaperSections(assembled);
+        } catch (apiErr: any) {
+            console.error('Paper generation failed:', apiErr);
             setIsGenerating(false);
-            setStep(5);
-        }, 1500);
+            setGenerationProgress(0);
+            setGenerationError(apiErr.message || 'Paper generation failed. Please verify that the question bank and blueprint are valid.');
+        }
     };
 
     // Calculate current total marks in generated paper
@@ -455,7 +423,7 @@ function GeneratePaperContent() {
         setReplaceDiffFilter('all');
     };
 
-    const handleConfirmReplacement = (replacement: MockQuestion) => {
+    const handleConfirmReplacement = (replacement: Question) => {
         if (replaceModal.sectionIndex === -1 || replaceModal.questionIndex === -1) return;
 
         setPaperSections(prev => {
@@ -495,9 +463,14 @@ function GeneratePaperContent() {
     const handleRegenerateQuestion = (sectionIndex: number, questionIndex: number) => {
         const sec = paperSections[sectionIndex];
         const candidates = allAvailableQuestions.filter(q =>
-            !sec.questions.some(sq => sq.text === q.text)
+            !sec.questions.some(sq => sq.text === q.text) &&
+            (q.marks === sec.marksPerQuestion || Math.abs(q.marks - sec.marksPerQuestion) <= 2)
         );
-        const randomChoice = candidates[Math.floor(Math.random() * candidates.length)] || mockQuestions[0];
+        if (candidates.length === 0) {
+            alert('No alternative questions available in the question bank matching this section.');
+            return;
+        }
+        const randomChoice = candidates[Math.floor(Math.random() * candidates.length)];
 
         setPaperSections(prev => {
             const next = [...prev];
@@ -525,12 +498,15 @@ function GeneratePaperContent() {
                 if (diff <= 0) return sec;
 
                 const newQs: PaperSectionQuestion[] = [...sec.questions];
-                const pool = allAvailableQuestions.filter(q => !newQs.some(sq => sq.text === q.text));
+                const pool = allAvailableQuestions.filter(q =>
+                    !newQs.some(sq => sq.text === q.text) &&
+                    (q.marks === sec.marksPerQuestion || Math.abs(q.marks - sec.marksPerQuestion) <= 2)
+                );
 
-                for (let i = 0; i < diff; i++) {
-                    const pick = pool[i] || mockQuestions[i % mockQuestions.length];
+                for (let i = 0; i < Math.min(diff, pool.length); i++) {
+                    const pick = pool[i];
                     newQs.push({
-                        id: `auto-${secIdx}-${Date.now()}-${i}`,
+                        id: pick.id || `auto-${secIdx}-${Date.now()}-${i}`,
                         text: pick.text,
                         marks: sec.marksPerQuestion,
                         difficulty: pick.difficulty,
@@ -557,16 +533,6 @@ function GeneratePaperContent() {
             }
         }
 
-        const newPaper = {
-            id: generatedPaperId || `gp-${Date.now()}`,
-            title: `${subjectName} - ${examName}`,
-            date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-            totalMarks: currentTotalMarks,
-            blueprintId: selectedBlueprint?.id || 'bp1'
-        };
-
-        // Append to mockGeneratedPapers for real session persistence
-        mockGeneratedPapers.unshift(newPaper);
         setIsSaved(true);
         setStep(6);
     };
@@ -759,6 +725,21 @@ function GeneratePaperContent() {
                             <Loader2 className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-3" />
                             <p className="text-sm text-slate-400">Loading available question banks...</p>
                         </div>
+                    ) : banks.length === 0 ? (
+                        <div className="py-12 border border-dashed border-slate-800 rounded-2xl text-center bg-slate-900/40 p-8 space-y-3">
+                            <Database className="w-10 h-10 text-slate-500 mx-auto" />
+                            <h3 className="text-lg font-semibold text-white">No question banks found</h3>
+                            <p className="text-sm text-slate-400 max-w-md mx-auto">
+                                No question banks are available yet. Please upload a question bank to get started.
+                            </p>
+                            <div className="pt-2">
+                                <Link href="/dashboard/banks">
+                                    <Button className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold">
+                                        <CloudUpload className="w-4 h-4 mr-2" /> Upload Question Bank
+                                    </Button>
+                                </Link>
+                            </div>
+                        </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {banks
@@ -854,43 +835,61 @@ function GeneratePaperContent() {
 
                     {/* Mode 1: Use Existing Blueprint */}
                     {blueprintMode === 'existing' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {blueprints.map((bp) => {
-                                const isSel = selectedBlueprint?.id === bp.id;
-                                const total = bp.sections.reduce((acc, s) => acc + s.totalMarks, 0);
-
-                                return (
-                                    <Card
-                                        key={bp.id}
-                                        onClick={() => setSelectedBlueprint(bp)}
-                                        className={`cursor-pointer border-2 transition-all p-5 rounded-xl backdrop-blur-sm ${
-                                            isSel
-                                                ? 'bg-amber-500/10 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
-                                                : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 hover:bg-slate-900/80'
-                                        }`}
+                        blueprints.length === 0 ? (
+                            <div className="py-12 border border-dashed border-slate-800 rounded-2xl text-center bg-slate-900/40 p-8 space-y-3">
+                                <FileSpreadsheet className="w-10 h-10 text-slate-500 mx-auto" />
+                                <h3 className="text-lg font-semibold text-white">No blueprints found</h3>
+                                <p className="text-sm text-slate-400 max-w-md mx-auto">
+                                    No blueprints found in the system. You can create a new blueprint or let AI generate one.
+                                </p>
+                                <div className="pt-2">
+                                    <Button
+                                        onClick={() => setBlueprintMode('create')}
+                                        className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
                                     >
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div>
-                                                <h4 className="font-bold text-white text-base">{bp.name}</h4>
-                                                <p className="text-xs text-slate-400 mt-0.5">{bp.sections.length} Sections</p>
-                                            </div>
-                                            <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs font-bold px-2.5 py-1">
-                                                {total} Marks
-                                            </Badge>
-                                        </div>
+                                        Create New Blueprint
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {blueprints.map((bp) => {
+                                    const isSel = selectedBlueprint?.id === bp.id;
+                                    const total = bp.sections.reduce((acc: number, s: any) => acc + (s.totalMarks || 0), 0);
 
-                                        <div className="space-y-1.5 bg-slate-950/50 p-3 rounded-lg border border-slate-800/80 text-xs text-slate-300">
-                                            {bp.sections.map(s => (
-                                                <div key={s.id} className="flex justify-between items-center">
-                                                    <span>{s.name} ({s.numberOfQuestions} × {s.marksPerQuestion}m)</span>
-                                                    <span className="font-bold text-amber-400">{s.totalMarks} M</span>
+                                    return (
+                                        <Card
+                                            key={bp.id}
+                                            onClick={() => setSelectedBlueprint(bp)}
+                                            className={`cursor-pointer border-2 transition-all p-5 rounded-xl backdrop-blur-sm ${
+                                                isSel
+                                                    ? 'bg-amber-500/10 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
+                                                    : 'bg-slate-900/50 border-slate-800 hover:border-slate-700 hover:bg-slate-900/80'
+                                            }`}
+                                        >
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h4 className="font-bold text-white text-base">{bp.name}</h4>
+                                                    <p className="text-xs text-slate-400 mt-0.5">{bp.sections.length} Sections</p>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </Card>
-                                );
-                            })}
-                        </div>
+                                                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs font-bold px-2.5 py-1">
+                                                    {total} Marks
+                                                </Badge>
+                                            </div>
+
+                                            <div className="space-y-1.5 bg-slate-950/50 p-3 rounded-lg border border-slate-800/80 text-xs text-slate-300">
+                                                {bp.sections.map((s: any) => (
+                                                    <div key={s.id} className="flex justify-between items-center">
+                                                        <span>{s.name} ({s.numberOfQuestions} × {s.marksPerQuestion}m)</span>
+                                                        <span className="font-bold text-amber-400">{s.totalMarks} M</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                        )
                     )}
 
                     {/* Mode 2: Create New Blueprint */}
@@ -1256,6 +1255,15 @@ function GeneratePaperContent() {
 
                     {/* Prominent Generation CTA */}
                     <div className="space-y-4 pt-2">
+                        {generationError && (
+                            <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl text-left flex items-start space-x-3 text-rose-300 text-sm max-w-md mx-auto">
+                                <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-400 mt-0.5" />
+                                <div>
+                                    <p className="font-semibold text-rose-200">Generation Failed</p>
+                                    <p className="text-xs text-rose-300/80 mt-0.5">{generationError}</p>
+                                </div>
+                            </div>
+                        )}
                         {isGenerating ? (
                             <div className="p-8 bg-slate-900/80 border border-amber-500/30 rounded-2xl space-y-4 max-w-md mx-auto">
                                 <Loader2 className="w-12 h-12 text-amber-500 animate-spin mx-auto" />

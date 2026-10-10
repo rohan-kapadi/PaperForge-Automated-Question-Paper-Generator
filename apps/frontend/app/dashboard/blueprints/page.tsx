@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ClipboardList, Plus, Sparkles, Trash2, CheckCircle2, Clock, Loader2 } from 'lucide-react';
-import { mockBlueprints, Blueprint, BlueprintSection } from '@/lib/mockData';
+import { Blueprint, BlueprintSection } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -18,7 +18,7 @@ interface ExtendedSection extends BlueprintSection {
 }
 
 export default function BlueprintsPage() {
-    const [blueprints, setBlueprints] = useState<Blueprint[]>(mockBlueprints);
+    const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showBuilder, setShowBuilder] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -77,10 +77,10 @@ export default function BlueprintsPage() {
                     return;
                 }
             }
-            setBlueprints(mockBlueprints);
+            setBlueprints([]);
         } catch (err) {
             console.error('Fetch blueprints error:', err);
-            setBlueprints(mockBlueprints);
+            setBlueprints([]);
         } finally {
             setIsLoading(false);
         }
@@ -161,20 +161,9 @@ export default function BlueprintsPage() {
                 const err = await res.json();
                 alert(`Error: ${err.message || 'Failed to save blueprint'}`);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error('Save blueprint error:', err);
-            // Fallback locally
-            const fallbackBp: Blueprint = {
-                id: `bp-${Date.now()}`,
-                name: newTitle.trim(),
-                sections: sections.map(s => ({
-                    ...s,
-                    totalMarks: Number(s.marksPerQuestion) * Number(s.numberOfQuestions)
-                }))
-            };
-            setBlueprints(prev => [fallbackBp, ...prev]);
-            setShowBuilder(false);
-            setNewTitle('');
+            alert(`Network error saving blueprint: ${err.message || 'Please verify the backend server is reachable.'}`);
         } finally {
             setIsSaving(false);
         }
@@ -338,10 +327,36 @@ export default function BlueprintsPage() {
             </AnimatePresence>
 
             {/* Blueprints Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {blueprints.map((bp) => {
-                    const totalMarks = bp.sections.reduce((acc, s) => acc + s.totalMarks, 0);
-                    const totalQuestions = bp.sections.reduce((acc, s) => acc + s.numberOfQuestions, 0);
+            {isLoading ? (
+                <div className="py-20 text-center">
+                    <Loader2 className="w-8 h-8 text-amber-500 animate-spin mx-auto mb-3" />
+                    <p className="text-sm text-slate-400">Loading blueprints...</p>
+                </div>
+            ) : blueprints.length === 0 ? (
+                <div className="py-16 border border-dashed border-slate-800 rounded-2xl text-center bg-slate-900/40 p-8 space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto">
+                        <ClipboardList className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-white mb-1">No blueprints found</h3>
+                        <p className="text-sm text-slate-400 max-w-md mx-auto">
+                            Examination blueprints define your section rules, mark distributions, and Bloom&apos;s taxonomy criteria.
+                        </p>
+                    </div>
+                    <div className="pt-2">
+                        <Button
+                            onClick={() => setShowBuilder(true)}
+                            className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
+                        >
+                            <Plus className="w-4 h-4 mr-2" /> Create Your First Blueprint
+                        </Button>
+                    </div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {blueprints.map((bp) => {
+                        const totalMarks = bp.sections.reduce((acc: number, s: any) => acc + (s.totalMarks || 0), 0);
+                        const totalQuestions = bp.sections.reduce((acc: number, s: any) => acc + (s.numberOfQuestions || 0), 0);
 
                     return (
                         <Card
@@ -405,7 +420,8 @@ export default function BlueprintsPage() {
                         </Card>
                     );
                 })}
-            </div>
+                </div>
+            )}
         </div>
     );
 }
