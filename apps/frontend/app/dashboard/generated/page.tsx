@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { FileText, Download, Eye, Calendar, Clock, Sparkles, Printer, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { mockGeneratedPapers, GeneratedPaper } from '@/lib/mockData';
 import { motion, AnimatePresence } from 'framer-motion';
+import CollegeQuestionPaper from '@/components/CollegeQuestionPaper';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
 
 interface RealPaper {
     id: string;
@@ -191,88 +193,14 @@ export default function GeneratedPapersPage() {
                                 </button>
                             </div>
 
-                            {/* Paper Preview Render */}
-                            <div className="flex-1 overflow-y-auto bg-slate-950/80 border border-slate-800 p-8 rounded-xl space-y-6 text-slate-200">
-                                <div className="text-center border-b border-slate-800 pb-4 space-y-1">
-                                    <h4 className="font-bold text-base text-white uppercase tracking-wider">Department of Computer Engineering</h4>
-                                    <p className="text-xs text-slate-400">Autonomous Examination Question Paper</p>
-                                    <p className="text-amber-400 font-semibold text-sm">{previewPaper.title}</p>
-                                    <div className="flex justify-between text-xs text-slate-400 pt-3 border-t border-slate-800/80">
-                                        <span>Duration: {previewPaper.content?.header?.duration_minutes || 90} Minutes</span>
-                                        <span>Max Marks: {previewPaper.total_marks || previewPaper.totalMarks || 50}</span>
-                                        <span>Set: {previewPaper.set_name || previewPaper.content?.header?.set_name || 'Set A'}</span>
-                                    </div>
-                                </div>
-
-                                {/* Instructions */}
-                                {previewPaper.content?.header?.instructions && (
-                                    <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-300 space-y-1">
-                                        <p className="font-semibold text-amber-400">Instructions:</p>
-                                        <ul className="list-disc list-inside space-y-0.5 text-slate-400">
-                                            {previewPaper.content.header.instructions.map((ins: string, idx: number) => (
-                                                <li key={idx}>{ins}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-
-                                {/* Sections with questions */}
-                                <div className="space-y-6">
-                                    {previewPaper.sections && previewPaper.sections.length > 0 ? (
-                                        previewPaper.sections.map((sec: any, sIdx: number) => (
-                                            <div key={sec.id || sIdx} className="space-y-3">
-                                                <div className="flex justify-between items-center border-b border-slate-800 pb-1">
-                                                    <span className="font-bold text-xs uppercase tracking-wider text-amber-400">
-                                                        {sec.name} ({sec.marksPerQuestion} Marks each)
-                                                    </span>
-                                                    <span className="text-xs text-slate-500 font-mono">
-                                                        Total: {sec.totalMarks || (sec.marksPerQuestion * sec.questions.length)} M
-                                                    </span>
-                                                </div>
-                                                <div className="space-y-2.5">
-                                                    {sec.questions.map((q: any, qIdx: number) => (
-                                                        <div key={q.id || qIdx} className="flex justify-between items-start gap-4 text-xs">
-                                                            <div className="space-y-1 flex-1">
-                                                                <p className="text-slate-200 leading-relaxed">
-                                                                    <strong className="text-slate-400 mr-2">Q{qIdx + 1}.</strong>
-                                                                    {q.text}
-                                                                </p>
-                                                                <div className="flex gap-2 text-[10px] text-slate-500">
-                                                                    {q.blooms_level && <span>Bloom: {q.blooms_level.replace('_', ' ')}</span>}
-                                                                    {q.unit && <span>• {q.unit}</span>}
-                                                                    {q.co && <span>• {q.co}</span>}
-                                                                </div>
-                                                            </div>
-                                                            <span className="font-mono text-amber-400 font-bold whitespace-nowrap">
-                                                                [{q.marks || sec.marksPerQuestion} M]
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="space-y-4 text-xs">
-                                            <div>
-                                                <p className="font-bold text-white uppercase text-xs mb-2">Section A - Core Concepts</p>
-                                                <p className="text-slate-300">1. Explain the primary architecture and functional layers of the database system. [5M]</p>
-                                                <p className="text-slate-300 mt-2">2. Differentiate between physical and logical data independence with an example. [5M]</p>
-                                            </div>
-                                            <div className="pt-2 border-t border-slate-800/60">
-                                                <p className="font-bold text-white uppercase text-xs mb-2">Section B - Comprehensive Problems</p>
-                                                <p className="text-slate-300">3. Construct an ER diagram representing the university examination cell workflow. [10M]</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                            {/* Official PCCOER Paper Preview Render */}
+                            <div className="flex-1 overflow-y-auto bg-slate-950/80 border border-slate-800 p-2 md:p-6 rounded-xl text-slate-200">
+                                <CollegeQuestionPaper paper={previewPaper} />
                             </div>
 
-                            <div className="flex justify-between items-center pt-2">
-                                <Button variant="ghost" onClick={() => setPreviewPaper(null)} className="text-slate-400">
+                            <div className="flex justify-end items-center pt-2 border-t border-slate-800">
+                                <Button variant="ghost" onClick={() => setPreviewPaper(null)} className="text-slate-400 hover:text-white">
                                     Close Preview
-                                </Button>
-                                <Button onClick={printCurrentPaper} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-                                    <Printer className="w-4 h-4 mr-2" /> Print Paper
                                 </Button>
                             </div>
                         </motion.div>

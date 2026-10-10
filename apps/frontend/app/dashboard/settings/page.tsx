@@ -8,9 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Settings as SettingsIcon, Building, ShieldCheck, Server, Save, CheckCircle2 } from 'lucide-react';
 
 export default function SettingsPage() {
-    const [collegeName, setCollegeName] = useState('Department of Computer Engineering, University of Technology');
-    const [autonomousText, setAutonomousText] = useState('An Autonomous Institute Affiliated to State University');
-    const [defaultDuration, setDefaultDuration] = useState('90');
+    const [collegeName, setCollegeName] = useState('Pimpri Chinchwad College of Engineering & Research Ravet, Pune');
+    const [trustName, setTrustName] = useState("Pimpri Chinchwad Education Trust's");
+    const [autonomousText, setAutonomousText] = useState('An Autonomous Institute | NBA Accredited (4 UG Programs) | NAAC A++ Accredited | ISO 21001:2018 Certified');
+    const [iqacText, setIqacText] = useState('IQAC PCCOER');
+    const [recordNo, setRecordNo] = useState('ACAD/R/11');
+    const [department, setDepartment] = useState('Computer Engineering');
+    const [defaultDuration, setDefaultDuration] = useState('60');
     const [saved, setSaved] = useState(false);
 
     const handleSave = () => {
@@ -40,17 +44,27 @@ export default function SettingsPage() {
                         Institution & Paper Header
                     </CardTitle>
                     <CardDescription className="text-slate-400">
-                        This text appears at the top of all generated examination papers.
+                        Official header parameters matching PCET &amp; PCCOER Ravet examination standard.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-slate-300">College / University Name</label>
-                        <Input
-                            value={collegeName}
-                            onChange={(e) => setCollegeName(e.target.value)}
-                            className="bg-slate-950 border-slate-800 text-white h-11 focus-visible:ring-amber-500"
-                        />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-300">Trust Name</label>
+                            <Input
+                                value={trustName}
+                                onChange={(e) => setTrustName(e.target.value)}
+                                className="bg-slate-950 border-slate-800 text-white h-11 focus-visible:ring-amber-500"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-300">College / Institute Name</label>
+                            <Input
+                                value={collegeName}
+                                onChange={(e) => setCollegeName(e.target.value)}
+                                className="bg-slate-950 border-slate-800 text-white h-11 focus-visible:ring-amber-500"
+                            />
+                        </div>
                     </div>
 
                     <div className="space-y-2">
@@ -60,6 +74,33 @@ export default function SettingsPage() {
                             onChange={(e) => setAutonomousText(e.target.value)}
                             className="bg-slate-950 border-slate-800 text-white h-11 focus-visible:ring-amber-500"
                         />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-300">Department</label>
+                            <Input
+                                value={department}
+                                onChange={(e) => setDepartment(e.target.value)}
+                                className="bg-slate-950 border-slate-800 text-white h-11"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-300">IQAC Tag</label>
+                            <Input
+                                value={iqacText}
+                                onChange={(e) => setIqacText(e.target.value)}
+                                className="bg-slate-950 border-slate-800 text-white h-11"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-300">Record No.</label>
+                            <Input
+                                value={recordNo}
+                                onChange={(e) => setRecordNo(e.target.value)}
+                                className="bg-slate-950 border-slate-800 text-white h-11 font-mono"
+                            />
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -75,7 +116,7 @@ export default function SettingsPage() {
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-slate-300">Academic Year</label>
                             <Input
-                                defaultValue="2025-2026"
+                                defaultValue="2025 – 26"
                                 className="bg-slate-950 border-slate-800 text-white h-11"
                             />
                         </div>

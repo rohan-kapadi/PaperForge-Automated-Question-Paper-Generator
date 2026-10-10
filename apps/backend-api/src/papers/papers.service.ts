@@ -550,4 +550,24 @@ export class PapersService {
         };
         return map[value.toLowerCase()] || 'Unit_Test_1';
     }
+
+    async exportDocx(paperData: any): Promise<Buffer> {
+        const parserUrl = process.env.PARSER_SERVICE_URL || 'http://localhost:8000';
+        try {
+            const res = await fetch(`${parserUrl}/export-pccoer-docx`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(paperData),
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`Parser service error: ${errText}`);
+            }
+            const arrayBuffer = await res.arrayBuffer();
+            return Buffer.from(arrayBuffer);
+        } catch (err: any) {
+            throw new HttpException(`Failed to generate DOCX export: ${err.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
 }
+

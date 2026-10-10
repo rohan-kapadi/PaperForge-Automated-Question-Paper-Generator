@@ -574,12 +574,34 @@ async def classify_single(req: ClassifyRequest):
     return result
 
 
+from fastapi.responses import StreamingResponse
+from pccoer_exporter import generate_pccoer_docx_stream
+
 @app.post('/classify-batch')
 async def classify_batch(questions: List[ClassifyRequest]):
     """Classify a batch of questions."""
     return [classify_question(q.text, q.marks) for q in questions]
 
 
+@app.post('/export-pccoer-docx')
+async def export_pccoer_docx(payload: dict):
+    """
+    Generate official PCCOER question paper DOCX matching the exact format,
+    logos, CO table, and examination grid.
+    """
+    try:
+        stream = generate_pccoer_docx_stream(payload)
+        filename = f"{payload.get('subject', 'Question_Paper').replace(' ', '_')}_{payload.get('exam_type', 'Unit_Test').replace(' ', '_')}.docx"
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate Word document: {str(e)}")
+
+
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

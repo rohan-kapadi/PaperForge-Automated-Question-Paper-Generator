@@ -35,8 +35,10 @@ import {
 } from 'lucide-react';
 import { mockQuestions, mockBlueprints, Blueprint, Question as MockQuestion, mockGeneratedPapers } from '@/lib/mockData';
 import { motion, AnimatePresence } from 'framer-motion';
+import CollegeQuestionPaper from '@/components/CollegeQuestionPaper';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
 
 interface QuestionBank {
     id: string;
@@ -570,6 +572,48 @@ function GeneratePaperContent() {
         setIsSaved(true);
         setStep(6);
     };
+
+    const handleExportDocx = async () => {
+        try {
+            const payload = {
+                department: 'Computer Engineering',
+                subject: subjectName,
+                subject_code: 'CS301PC',
+                class: 'TE',
+                div: 'A, B, C, D, E, F',
+                academic_year: '2025 – 26',
+                term: 'II',
+                exam_type: examName,
+                max_marks: targetBlueprintMarks,
+                duration: `${duration} Min`,
+                date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
+                record_no: 'ACAD/R/11',
+                rev: '00',
+                rev_date: '01-09-2025',
+                sections: paperSections,
+            };
+
+            const res = await fetch(`${BACKEND_URL}/papers/export/docx`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error('Export failed');
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${subjectName.replace(/\s+/g, '_')}_PCCOER_${examName.replace(/\s+/g, '_')}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error('Word export error:', e);
+            alert('Could not download Word document.');
+        }
+    };
+
 
     const steps = [
         { num: 1, label: 'Source' },
@@ -1345,118 +1389,22 @@ function GeneratePaperContent() {
                         )}
                     </div>
 
-                    {/* Paper Layout Canvas (A4 Realistic Layout) */}
-                    <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 md:p-8 space-y-8 shadow-2xl backdrop-blur-sm">
-                        {/* College Header */}
-                        <div className="text-center border-b-2 border-slate-800 pb-6 space-y-1">
-                            <h3 className="text-xl font-bold uppercase tracking-widest text-white">
-                                Department of Computer Engineering
-                            </h3>
-                            <p className="text-xs text-slate-400 uppercase tracking-wider">
-                                Autonomous Institute Affiliated to State University
-                            </p>
-                            <h4 className="text-lg font-bold text-amber-400 pt-1">
-                                {examName} • Academic Year 2025-2026
-                            </h4>
-                            <div className="flex justify-between items-center text-xs font-semibold text-slate-300 pt-3 max-w-2xl mx-auto">
-                                <span>Subject: {subjectName}</span>
-                                <span>Time: {duration} Minutes</span>
-                                <span>Max Marks: {targetBlueprintMarks}</span>
-                            </div>
-                        </div>
-
-                        {/* Standard Instructions */}
-                        <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 text-xs text-slate-400 space-y-1">
-                            <p className="font-semibold text-slate-300 uppercase tracking-wider">Instructions to Candidates:</p>
-                            <ol className="list-decimal list-inside space-y-0.5">
-                                <li>All questions are compulsory unless internal choice is specified.</li>
-                                <li>Figures to the right indicate full marks assigned to each question.</li>
-                                <li>Assume suitable additional data if necessary and state it clearly.</li>
-                                <li>Use of non-programmable scientific calculator is permitted.</li>
-                            </ol>
-                        </div>
-
-                        {/* Sections & Questions */}
-                        {paperSections.map((sec, secIdx) => (
-                            <div key={sec.id} className="space-y-4">
-                                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                                    <h4 className="text-base font-bold text-white uppercase tracking-wider flex items-center">
-                                        <span className="text-amber-500 mr-2">■</span> {sec.name}
-                                    </h4>
-                                    <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-xs">
-                                        {sec.questions.length} / {sec.targetCount} Questions • {sec.marksPerQuestion}M Each
-                                    </Badge>
-                                </div>
-
-                                <div className="space-y-3">
-                                    {sec.questions.map((q, qIdx) => (
-                                        <div
-                                            key={q.id || `${secIdx}-${qIdx}`}
-                                            className="p-4 bg-slate-950/70 border border-slate-800 hover:border-slate-700 rounded-xl transition-all group relative"
-                                        >
-                                            <div className="flex justify-between items-start gap-4">
-                                                <div className="flex items-start space-x-3 flex-1">
-                                                    <span className="font-bold text-amber-500 text-sm mt-0.5">Q{qIdx + 1}.</span>
-                                                    <div className="flex-1">
-                                                        <p className="text-sm text-slate-100 font-medium leading-relaxed">
-                                                            {q.text}
-                                                        </p>
-                                                        <div className="flex items-center space-x-3 text-xs text-slate-500 mt-2">
-                                                            <span className="text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                                                                {q.topic || 'Unit 1'}
-                                                            </span>
-                                                            <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                                                {q.difficulty || 'Medium'}
-                                                            </span>
-                                                            {q.blooms_level && (
-                                                                <span className="text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                                                                    Bloom: {q.blooms_level}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex flex-col items-end space-y-2">
-                                                    <span className="text-xs font-bold text-slate-300 bg-slate-900 px-2.5 py-1 rounded border border-slate-800">
-                                                        [{q.marks}M]
-                                                    </span>
-
-                                                    {/* Contextual Actions */}
-                                                    <div className="flex items-center space-x-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => handleOpenReplaceModal(secIdx, qIdx)}
-                                                            className="h-7 text-xs border-slate-700 bg-slate-900 hover:bg-slate-800 text-amber-400 px-2"
-                                                            title="Replace with another question from bank"
-                                                        >
-                                                            <RefreshCw className="w-3 h-3 mr-1" /> Replace
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => setEditingQuestion({ sectionIndex: secIdx, questionIndex: qIdx, text: q.text, marks: q.marks })}
-                                                            className="h-7 text-xs border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 px-2"
-                                                            title="Edit question text"
-                                                        >
-                                                            <Edit3 className="w-3 h-3" />
-                                                        </Button>
-                                                        <button
-                                                            onClick={() => handleRemoveQuestion(secIdx, qIdx)}
-                                                            className="text-slate-500 hover:text-red-400 p-1.5 rounded hover:bg-red-500/10 transition-colors"
-                                                            title="Remove Question"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
+                    {/* Official PCCOER College Paper Layout Canvas */}
+                    <div className="rounded-2xl p-2 md:p-4 shadow-2xl backdrop-blur-sm bg-slate-900/40 border border-slate-800">
+                        <CollegeQuestionPaper
+                            paper={{ sections: paperSections, title: subjectName, exam_type: examName }}
+                            department="Computer Engineering"
+                            subjectName={subjectName}
+                            subjectCode="CS301PC"
+                            examType={examName}
+                            duration={`${duration} Min`}
+                            maxMarks={targetBlueprintMarks}
+                            date={new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')}
+                            editable={true}
+                            onReplaceQuestion={handleOpenReplaceModal}
+                            onEditQuestion={(secIdx, qIdx, q) => setEditingQuestion({ sectionIndex: secIdx, questionIndex: qIdx, text: q.text, marks: q.marks })}
+                            onRemoveQuestion={handleRemoveQuestion}
+                        />
                     </div>
 
                     {/* Replacement Modal */}
@@ -1637,13 +1585,13 @@ function GeneratePaperContent() {
                             onClick={() => window.print()}
                             className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-semibold h-12 flex items-center justify-center"
                         >
-                            <Printer className="w-4 h-4 mr-2 text-amber-400" /> Print / PDF
+                            <Printer className="w-4 h-4 mr-2 text-amber-400" /> Print / Save PDF
                         </Button>
                         <Button
-                            onClick={() => window.print()}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 shadow-lg shadow-emerald-500/20 flex items-center justify-center"
+                            onClick={handleExportDocx}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-lg shadow-blue-500/20 flex items-center justify-center"
                         >
-                            <Download className="w-4 h-4 mr-2" /> Export PDF
+                            <Download className="w-4 h-4 mr-2" /> Export Word (.docx)
                         </Button>
                         <Link href="/dashboard/generated">
                             <Button
