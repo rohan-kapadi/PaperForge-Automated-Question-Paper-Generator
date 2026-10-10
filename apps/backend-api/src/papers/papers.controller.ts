@@ -42,10 +42,23 @@ export class PapersController {
         if (!paper) {
             throw new NotFoundException(`Paper ${id} not found`);
         }
+        const header = paper.content?.header || {};
         const payload = {
-            subject: paper.title || 'Examination Paper',
-            exam_type: paper.exam_type || 'UNIT TEST',
-            max_marks: paper.total_marks || 30,
+            subject: header.subject_name || paper.title || 'Examination Paper',
+            subject_code: header.subject_code || '',
+            department: header.department || 'Computer Engineering',
+            class: header.student_class || 'SE',
+            div: header.div || 'A, B, C, D, E, F',
+            academic_year: header.academic_year || '2025 – 26',
+            term: header.term || 'II',
+            exam_type: header.exam_type_display || paper.exam_type || 'UNIT TEST',
+            max_marks: paper.total_marks || header.max_marks || 30,
+            duration: header.duration || `${header.duration_minutes || 60} Min`,
+            date: header.exam_date || '',
+            record_no: header.record_no || 'ACAD/R/11',
+            rev: header.rev || '00',
+            rev_date: header.rev_date || '01-09-2025',
+            co_list: header.course_outcomes || [],
             content: paper.content,
             sections: paper.content?.sections || paper.sections || [],
         };

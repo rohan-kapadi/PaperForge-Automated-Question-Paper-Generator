@@ -74,12 +74,21 @@ export default function CollegeQuestionPaper({
     const [isExportingDocx, setIsExportingDocx] = useState(false);
 
     // Resolve details from paper object if provided
-    const resolvedSubject = paper?.title || paper?.subject || subjectName;
-    const resolvedExamType = paper?.exam_type || paper?.content?.header?.exam_type || examType;
-    const resolvedMarks = paper?.total_marks || paper?.totalMarks || maxMarks;
-    const resolvedDuration = paper?.content?.header?.duration_minutes ? `${paper.content.header.duration_minutes} Min` : duration;
-    const resolvedDate = paper?.date || date;
-    const resolvedCode = paper?.content?.header?.subject_code || subjectCode;
+    const header = paper?.content?.header || {};
+    const resolvedSubject = header.subject_name || paper?.title || paper?.subject || subjectName;
+    const resolvedExamType = header.exam_type_display || paper?.exam_type || header.exam_type || examType;
+    const resolvedMarks = paper?.total_marks || paper?.totalMarks || header.max_marks || maxMarks;
+    const resolvedDuration = header.duration || (header.duration_minutes ? `${header.duration_minutes} Min` : duration);
+    const resolvedDate = header.exam_date || paper?.date || date;
+    const resolvedCode = header.subject_code || subjectCode;
+    const resolvedDept = header.department || department;
+    const resolvedClass = header.student_class || studentClass;
+    const resolvedDiv = header.div || div;
+    const resolvedAy = header.academic_year || academicYear;
+    const resolvedTerm = header.term || term;
+    const resolvedRecordNo = header.record_no || recordNo;
+    const resolvedRev = header.rev || rev;
+    const resolvedRevDate = header.rev_date || revDate;
 
     // Default COs if not supplied
     const defaultCOs: CourseOutcome[] = [
@@ -87,7 +96,9 @@ export default function CollegeQuestionPaper({
         { co: 'CO2', desc: 'Apply core design techniques, models, and computational methodologies.', bt: 'L3' },
         { co: 'CO3', desc: 'Formulate, implement, and analyze optimized solutions for technical problem statements.', bt: 'L3' },
     ];
-    const cos = courseOutcomes || defaultCOs;
+    const cos: CourseOutcome[] = (header.course_outcomes && header.course_outcomes.length > 0)
+        ? header.course_outcomes
+        : (courseOutcomes || defaultCOs);
 
     // Flatten or structure questions into PCCOER pattern:
     // Que 1 (A, B, C) -> OR -> Que 2 (A, B, C) -> Page Break -> Que 3 (A, B, C) -> OR -> Que 4 (A, B, C)
@@ -171,36 +182,69 @@ export default function CollegeQuestionPaper({
         });
     }
 
-    // Split questions for Page 1 (Q1, OR, Q2) and Page 2 (Q3, OR, Q4)
-    const page1Items = structuredQuestions.filter(q => q.type === 'OR' ? true : (q.queNum && q.queNum <= 2));
-    const page2Items = structuredQuestions.filter(q => q.type === 'OR' ? false : (q.queNum && q.queNum > 2));
-    // Re-inject the second OR if exists
-    const finalPage2Items: typeof structuredQuestions = [];
-    page2Items.forEach((item, idx) => {
-        finalPage2Items.push(item);
-        if (item.queNum === 3 && item.sub === 'C' && page2Items.some(x => x.queNum === 4)) {
-            finalPage2Items.push({ type: 'OR' });
+    // Group all questions into continuous question blocks and OR dividers
+    interface QuestionBlock {
+        type: 'QUESTION' | 'OR';
+        queNum?: number;
+        items?: typeof structuredQuestions;
+    }
+
+    const questionBlocks: QuestionBlock[] = [];
+    let currentBlockItems: typeof structuredQuestions = [];
+    let currentQueNum: number | undefined = undefined;
+
+    structuredQuestions.forEach((item) => {
+        if (item.type === 'OR') {
+            if (currentBlockItems.length > 0) {
+                questionBlocks.push({
+                    type: 'QUESTION',
+                    queNum: currentQueNum,
+                    items: [...currentBlockItems],
+                });
+                currentBlockItems = [];
+                currentQueNum = undefined;
+            }
+            questionBlocks.push({ type: 'OR' });
+        } else {
+            if (currentQueNum !== undefined && item.queNum !== currentQueNum) {
+                questionBlocks.push({
+                    type: 'QUESTION',
+                    queNum: currentQueNum,
+                    items: [...currentBlockItems],
+                });
+                currentBlockItems = [];
+            }
+            currentQueNum = item.queNum;
+            currentBlockItems.push(item);
         }
     });
+
+    if (currentBlockItems.length > 0) {
+        questionBlocks.push({
+            type: 'QUESTION',
+            queNum: currentQueNum,
+            items: [...currentBlockItems],
+        });
+    }
 
     const handleDownloadDocx = async () => {
         setIsExportingDocx(true);
         try {
             const payload = {
-                department,
+                department: resolvedDept,
                 subject: resolvedSubject,
                 subject_code: resolvedCode,
-                class: studentClass,
-                div,
-                academic_year: academicYear,
-                term,
+                class: resolvedClass,
+                div: resolvedDiv,
+                academic_year: resolvedAy,
+                term: resolvedTerm,
                 exam_type: resolvedExamType,
                 max_marks: resolvedMarks,
                 duration: resolvedDuration,
                 date: resolvedDate,
-                record_no: recordNo,
-                rev,
-                rev_date: revDate,
+                record_no: resolvedRecordNo,
+                rev: resolvedRev,
+                rev_date: resolvedRevDate,
                 co_list: cos,
                 sections: paper?.sections || [],
             };
@@ -278,10 +322,8 @@ export default function CollegeQuestionPaper({
             <div className="pccoer-paper-container mx-auto bg-white text-black font-serif shadow-2xl rounded-sm print:shadow-none print:rounded-none max-w-[850px] p-6 sm:p-10 select-text"
                 style={{ fontFamily: '"Times New Roman", Times, serif' }}>
 
-                {/* ========================================================================= */}
-                {/* PAGE 1                                                                    */}
-                {/* ========================================================================= */}
-                <div className="min-h-[1050px] flex flex-col justify-between">
+                {/* Continuous Flow Paper Content */}
+                <div className="flex flex-col justify-between">
                     <div>
                         {/* 1. Header Box Table */}
                         <div className="border border-black">
@@ -316,15 +358,15 @@ export default function CollegeQuestionPaper({
                             {/* Row 2: Academic Year | UNIT TEST | Record No */}
                             <div className="grid grid-cols-12 text-center text-xs">
                                 <div className="col-span-3 border-r border-black p-1.5 flex flex-col justify-center text-left pl-3">
-                                    <div><strong className="font-bold">Academic Year:</strong> 2025 – 26</div>
-                                    <div><strong className="font-bold">Term:</strong> {term}</div>
+                                    <div><strong className="font-bold">Academic Year:</strong> {resolvedAy}</div>
+                                    <div><strong className="font-bold">Term:</strong> {resolvedTerm}</div>
                                 </div>
                                 <div className="col-span-6 p-1.5 flex items-center justify-center font-bold text-lg tracking-wider">
                                     {resolvedExamType}
                                 </div>
                                 <div className="col-span-3 border-l border-black p-1.5 flex flex-col justify-center text-left pl-3">
                                     <span className="text-[11px]">Record No.:</span>
-                                    <strong className="font-bold text-xs">{recordNo}</strong>
+                                    <strong className="font-bold text-xs">{resolvedRecordNo}</strong>
                                 </div>
                             </div>
                         </div>
@@ -333,13 +375,13 @@ export default function CollegeQuestionPaper({
                         <div className="py-2.5 text-xs text-black leading-relaxed space-y-1">
                             <div className="grid grid-cols-12">
                                 <div className="col-span-6">
-                                    <strong>Department:</strong> {department}
+                                    <strong>Department:</strong> {resolvedDept}
                                 </div>
                                 <div className="col-span-3">
-                                    <strong>Class:</strong> {studentClass}
+                                    <strong>Class:</strong> {resolvedClass}
                                 </div>
                                 <div className="col-span-3">
-                                    <strong>Div.:</strong> {div}
+                                    <strong>Div.:</strong> {resolvedDiv}
                                 </div>
                             </div>
                             <div className="grid grid-cols-12">
@@ -393,7 +435,7 @@ export default function CollegeQuestionPaper({
                             </table>
                         </div>
 
-                        {/* 5. Questions Table (Page 1) */}
+                        {/* 5. Continuous Questions Table */}
                         <div className="pt-1">
                             <table className="w-full border-collapse border border-black text-xs">
                                 <thead>
@@ -405,157 +447,91 @@ export default function CollegeQuestionPaper({
                                         <th className="p-1 w-12 text-center">PI</th>
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    {page1Items.map((q, idx) => {
-                                        if (q.type === 'OR') {
-                                            return (
-                                                <tr key={`or-${idx}`} className="border-b border-black bg-slate-50 print:bg-transparent">
+                                {questionBlocks.map((block, bIdx) => {
+                                    if (block.type === 'OR') {
+                                        return (
+                                            <tbody
+                                                key={`or-${bIdx}`}
+                                                className="or-divider-group"
+                                                style={{ breakInside: 'avoid', pageBreakInside: 'avoid', breakAfter: 'avoid', pageBreakAfter: 'avoid' }}
+                                            >
+                                                <tr className="border-b border-black bg-slate-50 print:bg-transparent">
                                                     <td colSpan={5} className="p-1 text-center font-bold tracking-widest text-sm">
                                                         OR
                                                     </td>
                                                 </tr>
-                                            );
-                                        }
-
-                                        return (
-                                            <tr key={`q-${idx}`} className="border-b border-black align-top group">
-                                                <td className="border-r border-black p-1.5 text-center font-bold">
-                                                    {q.sub === 'A' ? q.queNum : ''}
-                                                </td>
-                                                <td className="border-r border-black p-1.5 text-center font-bold">
-                                                    {q.sub}
-                                                </td>
-                                                <td className="border-r border-black p-1.5 leading-relaxed relative">
-                                                    <div>{q.text}</div>
-                                                    {/* Contextual actions for wizard editing */}
-                                                    {editable && q.raw && (
-                                                        <div className="no-print hidden group-hover:flex items-center space-x-1 mt-1 pt-1 border-t border-slate-200">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => onReplaceQuestion && onReplaceQuestion(q.secIdx ?? 0, q.qIdx ?? 0)}
-                                                                className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-sans flex items-center"
-                                                            >
-                                                                <RefreshCw className="w-2.5 h-2.5 mr-1" /> Replace
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => onEditQuestion && onEditQuestion(q.secIdx ?? 0, q.qIdx ?? 0, q.raw)}
-                                                                className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-900 px-2 py-0.5 rounded font-sans flex items-center"
-                                                            >
-                                                                <Edit3 className="w-2.5 h-2.5 mr-1" /> Edit
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => onRemoveQuestion && onRemoveQuestion(q.secIdx ?? 0, q.qIdx ?? 0)}
-                                                                className="text-[10px] bg-red-100 hover:bg-red-200 text-red-900 px-1.5 py-0.5 rounded font-sans"
-                                                            >
-                                                                <Trash2 className="w-2.5 h-2.5" />
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="border-r border-black p-1.5 text-center whitespace-nowrap">
-                                                    {q.marks_co_btl}
-                                                </td>
-                                                <td className="p-1.5 text-center">
-                                                    {q.pi}
-                                                </td>
-                                            </tr>
+                                            </tbody>
                                         );
-                                    })}
-                                </tbody>
+                                    }
+
+                                    const subItems = block.items || [];
+                                    const groupCount = subItems.length;
+
+                                    return (
+                                        <tbody
+                                            key={`qb-${block.queNum || bIdx}`}
+                                            className="question-group"
+                                            style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
+                                        >
+                                            {subItems.map((q, idx) => (
+                                                <tr key={`q-${block.queNum}-${idx}`} className="border-b border-black align-top group">
+                                                    {idx === 0 && (
+                                                        <td
+                                                            rowSpan={groupCount}
+                                                            className="border-r border-black p-1.5 text-center font-bold align-middle text-sm"
+                                                        >
+                                                            {q.queNum}
+                                                        </td>
+                                                    )}
+                                                    <td className="border-r border-black p-1.5 text-center font-bold">
+                                                        {q.sub}
+                                                    </td>
+                                                    <td className="border-r border-black p-1.5 leading-relaxed relative">
+                                                        <div>{q.text}</div>
+                                                        {editable && q.raw && (
+                                                            <div className="no-print hidden group-hover:flex items-center space-x-1 mt-1 pt-1 border-t border-slate-200">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onReplaceQuestion && onReplaceQuestion(q.secIdx ?? 0, q.qIdx ?? 0)}
+                                                                    className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-sans flex items-center"
+                                                                >
+                                                                    <RefreshCw className="w-2.5 h-2.5 mr-1" /> Replace
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onEditQuestion && onEditQuestion(q.secIdx ?? 0, q.qIdx ?? 0, q.raw)}
+                                                                    className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-900 px-2 py-0.5 rounded font-sans flex items-center"
+                                                                >
+                                                                    <Edit3 className="w-2.5 h-2.5 mr-1" /> Edit
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onRemoveQuestion && onRemoveQuestion(q.secIdx ?? 0, q.qIdx ?? 0)}
+                                                                    className="text-[10px] bg-red-100 hover:bg-red-200 text-red-900 px-1.5 py-0.5 rounded font-sans"
+                                                                >
+                                                                    <Trash2 className="w-2.5 h-2.5" />
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="border-r border-black p-1.5 text-center whitespace-nowrap">
+                                                        {q.marks_co_btl}
+                                                    </td>
+                                                    <td className="p-1.5 text-center">
+                                                        {q.pi}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    );
+                                })}
                             </table>
                         </div>
                     </div>
 
-                    {/* Page 1 Footer */}
-                    <div className="pt-6 flex justify-between items-center text-[10px] border-t border-transparent">
-                        <div>Rev.: {rev} &nbsp;&nbsp;&nbsp;&nbsp; Date: {revDate}</div>
-                        <div className="font-bold">Page 1 of 2</div>
-                    </div>
-                </div>
-
-                {/* ========================================================================= */}
-                {/* PAGE 2                                                                    */}
-                {/* ========================================================================= */}
-                <div className="page-break pt-8 min-h-[1050px] flex flex-col justify-between border-t-2 border-dashed border-slate-300 print:border-none mt-8 print:mt-0 print:pt-0">
-                    <div>
-                        {/* Questions Table (Page 2 Continuation: Que 3 & Que 4) */}
-                        <table className="w-full border-collapse border border-black text-xs">
-                            <thead>
-                                <tr className="border-b border-black text-center font-bold">
-                                    <th className="border-r border-black p-1 w-10 text-center">Que</th>
-                                    <th className="border-r border-black p-1 w-12 text-center">Sub Que.</th>
-                                    <th className="border-r border-black p-1 text-center">Questions</th>
-                                    <th className="border-r border-black p-1 w-24 text-center">Marks/ CO/BTL</th>
-                                    <th className="p-1 w-12 text-center">PI</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {finalPage2Items.map((q, idx) => {
-                                    if (q.type === 'OR') {
-                                        return (
-                                            <tr key={`or2-${idx}`} className="border-b border-black bg-slate-50 print:bg-transparent">
-                                                <td colSpan={5} className="p-1 text-center font-bold tracking-widest text-sm">
-                                                    OR
-                                                </td>
-                                            </tr>
-                                        );
-                                    }
-
-                                    return (
-                                        <tr key={`q2-${idx}`} className="border-b border-black align-top group">
-                                            <td className="border-r border-black p-1.5 text-center font-bold">
-                                                {q.sub === 'A' ? q.queNum : ''}
-                                            </td>
-                                            <td className="border-r border-black p-1.5 text-center font-bold">
-                                                {q.sub}
-                                            </td>
-                                            <td className="border-r border-black p-1.5 leading-relaxed relative">
-                                                <div>{q.text}</div>
-                                                {editable && q.raw && (
-                                                    <div className="no-print hidden group-hover:flex items-center space-x-1 mt-1 pt-1 border-t border-slate-200">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => onReplaceQuestion && onReplaceQuestion(q.secIdx ?? 0, q.qIdx ?? 0)}
-                                                            className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-sans flex items-center"
-                                                        >
-                                                            <RefreshCw className="w-2.5 h-2.5 mr-1" /> Replace
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => onEditQuestion && onEditQuestion(q.secIdx ?? 0, q.qIdx ?? 0, q.raw)}
-                                                            className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-900 px-2 py-0.5 rounded font-sans flex items-center"
-                                                        >
-                                                            <Edit3 className="w-2.5 h-2.5 mr-1" /> Edit
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => onRemoveQuestion && onRemoveQuestion(q.secIdx ?? 0, q.qIdx ?? 0)}
-                                                            className="text-[10px] bg-red-100 hover:bg-red-200 text-red-900 px-1.5 py-0.5 rounded font-sans"
-                                                        >
-                                                            <Trash2 className="w-2.5 h-2.5" />
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="border-r border-black p-1.5 text-center whitespace-nowrap">
-                                                {q.marks_co_btl}
-                                            </td>
-                                            <td className="p-1.5 text-center">
-                                                {q.pi}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Page 2 Footer */}
-                    <div className="pt-6 flex justify-between items-center text-[10px] border-t border-transparent">
-                        <div>Rev.: {rev} &nbsp;&nbsp;&nbsp;&nbsp; Date: {revDate}</div>
-                        <div className="font-bold">Page 2 of 2</div>
+                    {/* Continuous Document Footer */}
+                    <div className="pt-6 flex justify-between items-center text-[10px] text-slate-700 print:text-black">
+                        <div>Rev.: {resolvedRev} &nbsp;&nbsp;&nbsp;&nbsp; Date: {resolvedRevDate}</div>
                     </div>
                 </div>
             </div>

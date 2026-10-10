@@ -227,13 +227,13 @@ CREATE POLICY "Owner Access Users"
 
 ---
 
-## PHASE 3 — Official Autonomous Paper Format & Balanced "OR" Choice Engine
+## PHASE 3 — Official Autonomous Paper Format & Balanced "OR" Choice Engine [COMPLETED]
 
 **Goal:** Transform the generation pipeline to produce the official accredited college examination paper format (`REUT_PAPER_Format _Final.docx`): institutional logos, 3-column header boxes, Course Outcomes (CO) table, Sub-Questions (Q1 A, B, C), and strictly balanced "OR" choice pairs (Q1 OR Q2, Q3 OR Q4) with difficulty parity.
 
 ---
 
-### Step 3.1 — Autonomous Exam Metadata & Header Collection
+### Step 3.1 — Autonomous Exam Metadata & Header Collection [COMPLETED]
 
 **Context:** The official college paper format requires extensive institutional metadata that must be collected during generation and formatted into the document:
 - **Institute Header:** PCET & PCCOER logos, autonomous status, NAAC A++ / NBA accreditation lines, IQAC cell.
@@ -279,7 +279,7 @@ CREATE POLICY "Owner Access Users"
 
 ---
 
-### Step 3.2 — Sub-Question Hierarchy & Balanced "OR" Choice Engine
+### Step 3.2 — Sub-Question Hierarchy & Balanced "OR" Choice Engine [COMPLETED]
 
 **Context:** Autonomous examinations do not ask single isolated questions; they structure exams into Question Groups with internal sub-questions and balanced alternatives:
 - **Structure:** Main Que 1 has Sub-Questions `A`, `B`, `C` (e.g., 5 marks each = 15 marks total).
@@ -327,7 +327,7 @@ async generatePairedQuestionGroup(
 
 ---
 
-### Step 3.3 — Official DOCX Exporter matching `REUT_PAPER_Format _Final.docx`
+### Step 3.3 — Official DOCX Exporter matching `REUT_PAPER_Format _Final.docx` [COMPLETED]
 
 **Context:** Teachers currently spend hours formatting Word tables. The system must automatically produce a downloadable `.docx` identical to `REUT_PAPER_Format _Final.docx`.
 

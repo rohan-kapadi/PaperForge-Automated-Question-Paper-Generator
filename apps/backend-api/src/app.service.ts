@@ -25,7 +25,7 @@ export class AppService {
       client.from('generated_papers').select('*', { count: 'exact', head: true }),
       client.from('exam_blueprints').select('*', { count: 'exact', head: true }),
       client.from('generated_papers').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(5),
-      client.from('question_banks').select('id, name, file_name, created_at').order('created_at', { ascending: false }).limit(5),
+      client.from('question_banks').select('id, name, file_name, uploaded_at').order('uploaded_at', { ascending: false }).limit(5),
     ]);
 
     const activities: any[] = [];
@@ -41,7 +41,7 @@ export class AppService {
       activities.push({
         action: 'Uploaded Question Bank',
         title: b.name || b.file_name || 'Question Bank',
-        date: b.created_at,
+        date: b.uploaded_at,
         status: 'success',
       });
     }

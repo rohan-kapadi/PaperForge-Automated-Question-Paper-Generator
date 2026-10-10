@@ -261,8 +261,8 @@ export class QuestionsService {
         const { data: banks, error } = await this.supabaseService
             .getClient()
             .from('question_banks')
-            .select('id, name, file_name, file_type, subject_code, created_at')
-            .order('created_at', { ascending: false });
+            .select('id, name, file_name, file_type, subject_code, subject, uploaded_at')
+            .order('uploaded_at', { ascending: false });
 
         if (error) throw new HttpException(error.message, HttpStatus.BAD_GATEWAY);
 
@@ -287,8 +287,9 @@ export class QuestionsService {
             name: bank.name || bank.file_name || 'Untitled Bank',
             file_name: bank.file_name,
             file_type: bank.file_type,
-            subject: bank.subject_code,
-            created_at: bank.created_at,
+            subject: bank.subject_code || bank.subject,
+            created_at: bank.uploaded_at,
+            uploaded_at: bank.uploaded_at,
             questions_count: countMap[bank.id] || 0,
         }));
     }

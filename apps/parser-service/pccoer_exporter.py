@@ -36,6 +36,11 @@ def set_cell_margins(cell, top=50, bottom=50, left=80, right=80):
         tcMar.append(node)
     tcPr.append(tcMar)
 
+def make_row_cant_split(row):
+    """Ensure table row does not split across pages in Word."""
+    trPr = row._tr.get_or_add_trPr()
+    trPr.append(OxmlElement('w:cantSplit'))
+
 def generate_pccoer_docx_stream(paper_data: dict) -> io.BytesIO:
     """
     Generate the official PCCOER question paper format in DOCX.
@@ -68,7 +73,6 @@ def generate_pccoer_docx_stream(paper_data: dict) -> io.BytesIO:
     logo_paths = [
         os.path.join(base_dir, '..', 'frontend', 'public', 'logos'),
         os.path.join(base_dir, 'logos'),
-        '/Users/swarajkarle/.gemini/antigravity-ide/scratch/PaperForge-Automated-Question-Paper-Generator/apps/frontend/public/logos'
     ]
     pccoer_logo = None
     pcet_logo = None
@@ -410,16 +414,29 @@ def generate_pccoer_docx_stream(paper_data: dict) -> io.BytesIO:
         set_cell_borders(cell, top="single", bottom="single", left="single", right="single", color="000000", sz="6")
         set_cell_margins(cell, top=30, bottom=30, left=30, right=30)
 
+    # Track row ranges for each question group to merge column 0 vertically
+    que_row_groups = []
+    current_que_num = None
+    group_start_idx = None
+
     for item in normalized_q:
         row = q_table.add_row()
+        make_row_cant_split(row)
+        current_row_idx = len(q_table.rows) - 1
         for idx, w in enumerate(q_widths):
             row.cells[idx].width = w
 
         if item.get('type') == 'OR':
+            if current_que_num is not None and group_start_idx is not None:
+                que_row_groups.append((current_que_num, group_start_idx, current_row_idx - 1))
+                current_que_num = None
+                group_start_idx = None
+
             merged = row.cells[0].merge(row.cells[1]).merge(row.cells[2]).merge(row.cells[3]).merge(row.cells[4])
             merged.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             p = merged.paragraphs[0]
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.keep_with_next = True
             r = p.add_run("OR")
             r.bold = True
             r.font.name = 'Times New Roman'
@@ -427,13 +444,15 @@ def generate_pccoer_docx_stream(paper_data: dict) -> io.BytesIO:
             set_cell_borders(merged, top="single", bottom="single", left="single", right="single", color="000000", sz="6")
             set_cell_margins(merged, top=15, bottom=15, left=30, right=30)
         else:
+            item_que = item.get('que', '')
+            if item_que != current_que_num:
+                if current_que_num is not None and group_start_idx is not None:
+                    que_row_groups.append((current_que_num, group_start_idx, current_row_idx - 1))
+                current_que_num = item_que
+                group_start_idx = current_row_idx
+
             c0 = row.cells[0]
-            p = c0.paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            r = p.add_run(item.get('que', ''))
-            r.bold = True
-            r.font.name = 'Times New Roman'
-            r.font.size = Pt(10)
+            c0.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
             c1 = row.cells[1]
             p = c1.paragraphs[0]
@@ -466,6 +485,36 @@ def generate_pccoer_docx_stream(paper_data: dict) -> io.BytesIO:
             for cell in row.cells:
                 set_cell_borders(cell, top="single", bottom="single", left="single", right="single", color="000000", sz="6")
                 set_cell_margins(cell, top=30, bottom=30, left=30, right=30)
+
+    # Finalize last question group if any
+    if current_que_num is not None and group_start_idx is not None:
+        que_row_groups.append((current_que_num, group_start_idx, len(q_table.rows) - 1))
+
+    # Vertically merge Que column (cell 0) across all sub-questions for each question group
+    # and keep all sub-questions of that question together on the same page
+    for que_num, s_idx, e_idx in que_row_groups:
+        start_cell = q_table.cell(s_idx, 0)
+        if s_idx < e_idx:
+            end_cell = q_table.cell(e_idx, 0)
+            merged_que_cell = start_cell.merge(end_cell)
+            # Prevent splitting across pages between sub-questions of the same question
+            for r_i in range(s_idx, e_idx):
+                for cell in q_table.rows[r_i].cells:
+                    for cp in cell.paragraphs:
+                        cp.paragraph_format.keep_with_next = True
+        else:
+            merged_que_cell = start_cell
+
+        merged_que_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        p = merged_que_cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.text = ""
+        r = p.add_run(str(que_num))
+        r.bold = True
+        r.font.name = 'Times New Roman'
+        r.font.size = Pt(11)
+        set_cell_borders(merged_que_cell, top="single", bottom="single", left="single", right="single", color="000000", sz="6")
+        set_cell_margins(merged_que_cell, top=30, bottom=30, left=30, right=30)
 
     stream = io.BytesIO()
     doc.save(stream)

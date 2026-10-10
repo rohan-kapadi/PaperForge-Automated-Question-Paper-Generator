@@ -18,6 +18,17 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS classification_source TEXT DEFAUL
 ALTER TABLE question_banks ADD COLUMN IF NOT EXISTS file_name TEXT;
 ALTER TABLE question_banks ADD COLUMN IF NOT EXISTS file_type TEXT;
 
+-- PHASE 3: Complete generated_papers table columns for autonomous examination papers
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS title TEXT DEFAULT 'Examination Paper';
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS exam_type TEXT DEFAULT 'Unit_Test_1';
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS set_name TEXT DEFAULT 'Set A';
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Generated';
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS content JSONB;
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS pdf_url TEXT;
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS docx_url TEXT;
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS moderation_comments TEXT;
+ALTER TABLE generated_papers ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMP WITH TIME ZONE;
+
 -- PHASE 3: Development RLS Policies
 -- Allows the backend (anon key) to work without JWT auth during development.
 -- IMPORTANT: Replace with proper authenticated policies before production.

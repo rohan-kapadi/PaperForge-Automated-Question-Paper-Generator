@@ -60,7 +60,7 @@ export class AuditService {
                 { data: papers },
                 { data: blueprints },
             ] = await Promise.all([
-                client.from('question_banks').select('*').order('created_at', { ascending: false }),
+                client.from('question_banks').select('*').order('uploaded_at', { ascending: false }),
                 client.from('generated_papers').select('*').order('created_at', { ascending: false }),
                 client.from('exam_blueprints').select('*').order('created_at', { ascending: false }),
             ]);
@@ -77,7 +77,7 @@ export class AuditService {
                         file_name: b.file_name || b.name,
                     },
                     user: 'Faculty',
-                    created_at: b.created_at,
+                    created_at: b.uploaded_at,
                 });
             }
 

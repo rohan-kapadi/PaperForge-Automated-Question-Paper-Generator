@@ -134,6 +134,30 @@ body {
     border-color: #000000 !important;
   }
 
+  /* Prevent question groups from splitting across pages during printing */
+  .question-group,
+  tbody.question-group {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .or-divider-group,
+  tbody.or-divider-group {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
   .page-break {
     page-break-before: always !important;
     break-before: page !important;

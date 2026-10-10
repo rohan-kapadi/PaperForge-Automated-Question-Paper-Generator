@@ -11,6 +11,9 @@ export class BlueprintSectionConfig {
     blooms_levels?: string[];       // e.g. ['L1_Remember', 'L2_Understand']
     question_types?: string[];      // e.g. ['Short Answer', 'Definition']
     units?: string[];               // e.g. ['Unit 1', 'Unit 2']
+    is_or_choice?: boolean;         // True if this is an alternative OR choice section
+    paired_with_id?: string;        // ID of the primary section this is paired with
+    pair_label?: string;            // e.g. 'Que 1 OR Que 2'
 }
 
 export class CreateBlueprintDto {
@@ -21,6 +24,7 @@ export class CreateBlueprintDto {
     duration_minutes: number;
     instructions?: string[];
     sections: BlueprintSectionConfig[];
+    has_or_choices?: boolean;
 }
 
 @Injectable()
@@ -31,18 +35,24 @@ export class BlueprintsService {
     // CREATE
     // -------------------------------------------------------------------------
     async create(dto: CreateBlueprintDto) {
-        // Validate: sections must sum to total_marks
-        const sectionSum = dto.sections.reduce(
-            (acc, s) => acc + (s.marks_per_question * s.number_of_questions),
-            0,
-        );
+        // Calculate attempt marks (excluding alternative OR choices) vs gross printed marks
+        const attemptMarksSum = dto.sections
+            .filter(s => !s.is_or_choice)
+            .reduce((acc, s) => acc + (s.marks_per_question * s.number_of_questions), 0);
+        const grossMarksSum = dto.sections
+            .reduce((acc, s) => acc + (s.marks_per_question * s.number_of_questions), 0);
 
-        if (sectionSum !== dto.total_marks) {
+        const hasOrChoices = dto.has_or_choices ?? dto.sections.some(s => s.is_or_choice);
+
+        // Validation: total_marks can match either attempt marks (student target) or gross marks
+        if (dto.total_marks !== attemptMarksSum && dto.total_marks !== grossMarksSum && grossMarksSum > 0) {
             throw new HttpException(
-                `Section marks sum (${sectionSum}) does not match total_marks (${dto.total_marks}). Please fix section configuration.`,
+                `Section marks sum (Attempt: ${attemptMarksSum}M, Gross: ${grossMarksSum}M) does not match total_marks (${dto.total_marks}M). Please verify mark allocation.`,
                 HttpStatus.BAD_REQUEST,
             );
         }
+
+        const effectiveTotalMarks = attemptMarksSum > 0 ? attemptMarksSum : dto.total_marks;
 
         const { data, error } = await this.supabaseService
             .getClient()
@@ -51,10 +61,15 @@ export class BlueprintsService {
                 title: dto.title,
                 exam_type: this.normalizeExamType(dto.exam_type) || 'Unit_Test_1',
                 subject_code: dto.subject_code || null,
-                total_marks: dto.total_marks,
+                total_marks: effectiveTotalMarks,
                 duration_minutes: dto.duration_minutes,
                 instructions: dto.instructions || [],
-                schema: { sections: dto.sections },  // stored as JSONB
+                schema: {
+                    sections: dto.sections,
+                    has_or_choices: hasOrChoices,
+                    attempt_marks: attemptMarksSum,
+                    gross_marks: grossMarksSum,
+                },
             }])
             .select();
 
@@ -141,7 +156,9 @@ export class BlueprintsService {
     // -------------------------------------------------------------------------
     private formatBlueprint(raw: any) {
         if (!raw) return null;
-        const sections: BlueprintSectionConfig[] = raw.schema?.sections || [];
+        const schema = raw.schema || {};
+        const sections: BlueprintSectionConfig[] = schema.sections || [];
+        const hasOrChoices = schema.has_or_choices ?? sections.some(s => s.is_or_choice);
         return {
             id: raw.id,
             title: raw.title,
@@ -149,9 +166,14 @@ export class BlueprintsService {
             exam_type: raw.exam_type,
             subject_code: raw.subject_code,
             total_marks: raw.total_marks,
+            totalMarks: raw.total_marks,
             duration_minutes: raw.duration_minutes,
             instructions: raw.instructions || [],
             sections,
+            has_or_choices: hasOrChoices,
+            attempt_marks: schema.attempt_marks || raw.total_marks,
+            gross_marks: schema.gross_marks || raw.total_marks,
+            schema,
             created_at: raw.created_at,
         };
     }

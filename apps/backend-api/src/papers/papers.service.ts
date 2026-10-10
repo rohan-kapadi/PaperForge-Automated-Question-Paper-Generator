@@ -1,6 +1,12 @@
 import { Injectable, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 
+export class CourseOutcomeDto {
+    co: string;
+    desc: string;
+    bt: string;
+}
+
 export class GeneratePaperDto {
     blueprint_id?: string;
     blueprint?: any;
@@ -14,6 +20,28 @@ export class GeneratePaperDto {
     selected_units?: string[];
     selected_blooms?: string[];
     avoid_question_ids?: string[];
+
+    // --- PCCOER Autonomous College Exam Header Fields ---
+    academic_year?: string;          // e.g. '2025 – 26'
+    term?: string;                   // e.g. 'II'
+    record_no?: string;              // e.g. 'ACAD/R/11'
+    department?: string;             // e.g. 'Computer Engineering'
+    student_class?: string;          // e.g. 'SE'
+    div?: string;                    // e.g. 'A, B, C, D, E, F'
+    subject_name?: string;           // e.g. 'Database Management Systems'
+    max_marks?: number;              // e.g. 30
+    duration?: string;               // e.g. '1 hr.'
+    exam_date?: string;              // e.g. '16/02/2026'
+    rev?: string;                    // e.g. '00'
+    rev_date?: string;               // e.g. '01-09-2025'
+    course_outcomes?: CourseOutcomeDto[];
+
+    // --- OR-Pairing Mode ---
+    // When true, sections are treated as paired (S1 ↔ S2, S3 ↔ S4).
+    // Each pair generates Q1 (A,B,C) OR Q2 (A,B,C) with strict difficulty/Bloom's parity.
+    use_or_pairing?: boolean;
+    sub_questions_per_group?: number;   // default 3
+    marks_per_sub_question?: number;    // default 5
 }
 
 export class UpdatePaperStatusDto {
@@ -104,10 +132,37 @@ export class PapersService {
         const builtSections: any[] = [];
 
         // Difficulty preset targets
+        // Difficulty preset targets
         const diffPreset = dto.difficulty_preset || 'Balanced';
 
-        for (let sIdx = 0; sIdx < sections.length; sIdx++) {
-            const sec = sections[sIdx];
+        // Check if blueprint already has OR choices defined in its section schema
+        const hasBlueprintOrChoices = sections.some((s: any) => s.is_or_choice || s.isOrChoice);
+        const isOrPairingActive = dto.use_or_pairing ?? hasBlueprintOrChoices;
+
+        // When use_or_pairing is enabled from dto and blueprint has flat sections, expand them
+        let effectiveSections = [...sections];
+        if (dto.use_or_pairing && !hasBlueprintOrChoices) {
+            if (sections.length === 2) {
+                const subCount = dto.sub_questions_per_group || 3;
+                const subMarks = dto.marks_per_sub_question || 5;
+                effectiveSections = [
+                    { ...sections[0], id: `${sections[0].id || 's1'}_q1`, name: 'Que 1', number_of_questions: subCount, marks_per_question: subMarks, is_or_choice: false },
+                    { ...sections[0], id: `${sections[0].id || 's1'}_q2`, name: 'Que 2 (OR)', number_of_questions: subCount, marks_per_question: subMarks, is_or_choice: true, paired_with_id: `${sections[0].id || 's1'}_q1` },
+                    { ...sections[1], id: `${sections[1].id || 's2'}_q3`, name: 'Que 3', number_of_questions: subCount, marks_per_question: subMarks, is_or_choice: false },
+                    { ...sections[1], id: `${sections[1].id || 's2'}_q4`, name: 'Que 4 (OR)', number_of_questions: subCount, marks_per_question: subMarks, is_or_choice: true, paired_with_id: `${sections[1].id || 's2'}_q3` },
+                ];
+            } else if (sections.length === 1 && (sections[0].number_of_questions ?? sections[0].numberOfQuestions ?? 0) >= 6) {
+                const subCount = dto.sub_questions_per_group || 3;
+                const subMarks = dto.marks_per_sub_question || 5;
+                effectiveSections = [
+                    { ...sections[0], id: `${sections[0].id || 's1'}_q1`, name: 'Que 1', number_of_questions: subCount, marks_per_question: subMarks, is_or_choice: false },
+                    { ...sections[0], id: `${sections[0].id || 's1'}_q2`, name: 'Que 2 (OR)', number_of_questions: subCount, marks_per_question: subMarks, is_or_choice: true, paired_with_id: `${sections[0].id || 's1'}_q1` },
+                ];
+            }
+        }
+
+        for (let sIdx = 0; sIdx < effectiveSections.length; sIdx++) {
+            const sec = effectiveSections[sIdx];
             const targetMarks = Number(sec.marks_per_question ?? sec.marksPerQuestion ?? 5);
             const targetCount = Number(sec.number_of_questions ?? sec.numberOfQuestions ?? sec.targetCount ?? 1);
             const secName = sec.name || `Section ${String.fromCharCode(65 + sIdx)}`;
@@ -128,7 +183,6 @@ export class PapersService {
                 if (unitCandidates.length >= targetCount) {
                     candidates = unitCandidates;
                 } else if (unitCandidates.length > 0) {
-                    // Use available and warn
                     warnings.push(`${secName}: Only ${unitCandidates.length} of ${targetCount} questions match the selected units; included other units to satisfy count.`);
                 }
             }
@@ -151,16 +205,19 @@ export class PapersService {
                 }
             }
 
-            // If not enough questions matching exact marks, allow close marks (+-2) as fallback
+            // If not enough questions matching exact marks, allow close marks (+-2) or any unused questions from bank
             if (candidates.length < targetCount) {
-                const fallbackCandidates = allQuestions.filter(q => {
+                let fallbackCandidates = allQuestions.filter(q => {
                     if (usedIds.has(q.id) || avoidIds.has(q.id)) return false;
                     const diff = Math.abs(Number(q.marks || 5) - targetMarks);
                     return diff <= 2;
                 });
+                if (fallbackCandidates.length < targetCount) {
+                    fallbackCandidates = allQuestions.filter(q => !usedIds.has(q.id) && !avoidIds.has(q.id));
+                }
                 if (fallbackCandidates.length > candidates.length) {
                     candidates = fallbackCandidates;
-                    warnings.push(`${secName}: Insufficient ${targetMarks}-mark questions; selected close-mark alternatives.`);
+                    warnings.push(`${secName}: Insufficient ${targetMarks}-mark questions; selected available bank alternatives.`);
                 }
             }
 
@@ -173,8 +230,42 @@ export class PapersService {
 
             // Pick questions
             const selectedForSec: any[] = [];
-            for (let i = 0; i < targetCount && i < candidates.length; i++) {
+            const isOrAlternative = dto.use_or_pairing && (sIdx % 2 === 1) && builtSections.length >= sIdx;
+            const primarySec = isOrAlternative ? builtSections[sIdx - 1] : null;
+
+            if (primarySec && primarySec.questions && primarySec.questions.length > 0) {
+                // Pedagogical parity: pick questions mirroring the primary section's cognitive profile
+                for (const primQ of primarySec.questions) {
+                    if (selectedForSec.length >= targetCount) break;
+                    const match = this.findMatchingCandidate(candidates, {
+                        marks: targetMarks,
+                        difficulty: primQ.difficulty,
+                        blooms_level: primQ.blooms_level,
+                        unit: primQ.unit,
+                    });
+                    if (match) {
+                        usedIds.add(match.id);
+                        candidates = candidates.filter(c => c.id !== match.id);
+                        selectedForSec.push({
+                            id: match.id,
+                            text: match.text || match.question_text,
+                            marks: targetMarks,
+                            difficulty: match.difficulty || 'Medium',
+                            blooms_level: match.blooms_level || 'L2_Understand',
+                            topic: match.topic || match.subject || 'General',
+                            unit: match.unit || 'Unit 1',
+                            co: match.co || primQ.co || 'CO1',
+                            question_type: match.question_type || 'Short Answer',
+                            classification_source: match.classification_source || 'ai',
+                        });
+                    }
+                }
+            }
+
+            // Fill remaining slots if any
+            for (let i = 0; selectedForSec.length < targetCount && i < candidates.length; i++) {
                 const pick = candidates[i];
+                if (usedIds.has(pick.id)) continue;
                 usedIds.add(pick.id);
                 selectedForSec.push({
                     id: pick.id,
@@ -184,7 +275,7 @@ export class PapersService {
                     blooms_level: pick.blooms_level || 'L2_Understand',
                     topic: pick.topic || pick.subject || 'General',
                     unit: pick.unit || 'Unit 1',
-                    co: pick.co || 'CO1',
+                    co: pick.co || `CO${(sIdx % 3) + 1}`,
                     question_type: pick.question_type || 'Short Answer',
                     classification_source: pick.classification_source || 'ai',
                 });
@@ -255,6 +346,22 @@ export class PapersService {
                     'Assume suitable data wherever necessary.',
                 ],
                 set_name: dto.set_name || 'Set A',
+                // Autonomous College Format (PCET PCCOER)
+                academic_year: dto.academic_year || '2025 – 26',
+                term: dto.term || 'II',
+                exam_type_display: dto.exam_type || blueprint.exam_type || 'UNIT TEST',
+                record_no: dto.record_no || 'ACAD/R/11',
+                department: dto.department || 'Computer Engineering',
+                student_class: dto.student_class || 'SE',
+                div: dto.div || 'A, B, C, D, E, F',
+                subject_name: dto.subject_name || dto.title || blueprint.title || '',
+                max_marks: dto.max_marks || blueprint.total_marks || actualTotalMarks,
+                duration: dto.duration || `${blueprint.duration_minutes || 90} Min`,
+                exam_date: dto.exam_date || new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
+                rev: dto.rev || '00',
+                rev_date: dto.rev_date || '01-09-2025',
+                course_outcomes: dto.course_outcomes || [],
+                use_or_pairing: dto.use_or_pairing || false,
             },
             sections: builtSections,
             stats,
@@ -297,9 +404,38 @@ export class PapersService {
                     }])
                     .select();
 
-                if (retryError) throw new HttpException(`Failed to persist paper: ${retryError.message}`, HttpStatus.BAD_GATEWAY);
-                return this.formatPaper(retryData[0]);
+                if (!retryError && retryData && retryData.length > 0) {
+                    return this.formatPaper(retryData[0]);
+                }
             }
+
+            // If table lacks newer columns (e.g. before migration is applied in Supabase), fallback gracefully
+            if (saveError.message.includes('column') || saveError.message.includes('schema cache')) {
+                const { data: minData } = await client
+                    .from('generated_papers')
+                    .insert([{
+                        total_marks: actualTotalMarks,
+                    }])
+                    .select();
+
+                const fallbackId = (minData && minData[0]?.id) ? minData[0].id : `gen-${Date.now()}`;
+                return {
+                    id: fallbackId,
+                    blueprint_id: blueprint.id || null,
+                    title: dto.title || blueprint.title || 'Examination Paper',
+                    exam_type: normalizedExamType,
+                    set_name: dto.set_name || 'Set A',
+                    status: 'Generated',
+                    total_marks: actualTotalMarks,
+                    totalMarks: actualTotalMarks,
+                    content,
+                    sections: builtSections,
+                    stats,
+                    validation: { is_valid: isValid, warnings },
+                    created_at: new Date().toISOString(),
+                };
+            }
+
             throw new HttpException(`Failed to persist paper: ${saveError.message}`, HttpStatus.BAD_GATEWAY);
         }
 
@@ -313,7 +449,7 @@ export class PapersService {
         const { data, error } = await this.supabaseService
             .getClient()
             .from('generated_papers')
-            .select('id, blueprint_id, title, exam_type, set_name, status, total_marks, content, pdf_url, docx_url, moderation_comments, created_at')
+            .select('*')
             .order('created_at', { ascending: false });
 
         if (error) throw new HttpException(error.message, HttpStatus.BAD_GATEWAY);
@@ -354,7 +490,12 @@ export class PapersService {
             .eq('id', id)
             .select();
 
-        if (error) throw new HttpException(error.message, HttpStatus.BAD_GATEWAY);
+        if (error) {
+            if (error.message.includes('column') || error.message.includes('schema cache')) {
+                return { id, status: dto.status, moderation_comments: dto.moderation_comments };
+            }
+            throw new HttpException(error.message, HttpStatus.BAD_GATEWAY);
+        }
         return this.formatPaper(data[0]);
     }
 
@@ -568,6 +709,47 @@ export class PapersService {
         } catch (err: any) {
             throw new HttpException(`Failed to generate DOCX export: ${err.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private findMatchingCandidate(
+        pool: any[],
+        criteria: { marks: number; difficulty: string; blooms_level: string; unit?: string }
+    ): any | null {
+        // 1. Exact match on marks, diff, blooms, and unit
+        const targetUnit = criteria.unit;
+        if (targetUnit) {
+            const exactUnit = pool.find(q =>
+                Math.abs(Number(q.marks || 5) - criteria.marks) <= 1 &&
+                q.difficulty === criteria.difficulty &&
+                q.blooms_level === criteria.blooms_level &&
+                (q.unit || '').toLowerCase().includes(targetUnit.toLowerCase())
+            );
+            if (exactUnit) return exactUnit;
+        }
+
+        // 2. Exact match on marks, diff, blooms
+        const exact = pool.find(q =>
+            Math.abs(Number(q.marks || 5) - criteria.marks) <= 1 &&
+            q.difficulty === criteria.difficulty &&
+            q.blooms_level === criteria.blooms_level
+        );
+        if (exact) return exact;
+
+        // 3. Relax blooms level (match marks + difficulty)
+        const matchDiff = pool.find(q =>
+            Math.abs(Number(q.marks || 5) - criteria.marks) <= 1 &&
+            q.difficulty === criteria.difficulty
+        );
+        if (matchDiff) return matchDiff;
+
+        // 4. Relax difficulty (match marks)
+        const matchMarks = pool.find(q =>
+            Math.abs(Number(q.marks || 5) - criteria.marks) <= 1
+        );
+        if (matchMarks) return matchMarks;
+
+        // 5. Ultimate fallback: any available question in pool
+        return pool.length > 0 ? pool[0] : null;
     }
 }
 

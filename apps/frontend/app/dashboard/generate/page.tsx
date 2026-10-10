@@ -100,12 +100,28 @@ function GeneratePaperContent() {
     const [aiMarksInput, setAiMarksInput] = useState('50');
 
     // Step 3: Configure
-    const [examName, setExamName] = useState('Mid-Term Examination');
+    const [examName, setExamName] = useState('UNIT TEST');
     const [subjectName, setSubjectName] = useState('Database Management Systems');
-    const [duration, setDuration] = useState('90');
+    const [duration, setDuration] = useState('60');
     const [difficulty, setDifficulty] = useState<'Balanced' | 'Easy' | 'Moderate' | 'Challenging'>('Balanced');
     const [selectedUnits, setSelectedUnits] = useState<string[]>(['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4']);
     const [selectedBlooms, setSelectedBlooms] = useState<string[]>(['Understand', 'Apply', 'Analyze']);
+
+    // PCCOER Autonomous College Format Fields
+    const [department, setDepartment] = useState('Computer Engineering');
+    const [studentClass, setStudentClass] = useState('SE');
+    const [division, setDivision] = useState('A, B, C, D, E, F');
+    const [subjectCode, setSubjectCode] = useState('CS301PC');
+    const [academicYear, setAcademicYear] = useState('2025 – 26');
+    const [term, setTerm] = useState('II');
+    const [examDate, setExamDate] = useState(new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'));
+    const [recordNo, setRecordNo] = useState('ACAD/R/11');
+    const [courseOutcomes, setCourseOutcomes] = useState([
+        { co: 'CO1', desc: 'Understand the fundamental concepts, architectures, and theoretical foundations.', bt: 'L2' },
+        { co: 'CO2', desc: 'Apply core design techniques, models, and computational methodologies.', bt: 'L3' },
+        { co: 'CO3', desc: 'Formulate, implement, and analyze optimized solutions for technical problem statements.', bt: 'L3' },
+    ]);
+    const [useOrPairing, setUseOrPairing] = useState(true);
 
     // Step 4 & 5: Generation & Review
     const [isGenerating, setIsGenerating] = useState(false);
@@ -167,12 +183,26 @@ function GeneratePaperContent() {
                         const formattedBps = bpData.map((b: any) => ({
                             id: b.id,
                             name: b.title || b.name,
+                            title: b.title,
+                            exam_type: b.exam_type,
+                            subject_code: b.subject_code,
+                            duration_minutes: b.duration_minutes,
+                            total_marks: b.total_marks,
+                            totalMarks: b.total_marks,
+                            attempt_marks: b.attempt_marks || b.total_marks,
+                            gross_marks: b.gross_marks || b.total_marks,
+                            has_or_choices: b.has_or_choices ?? (b.sections || []).some((s: any) => s.is_or_choice || s.isOrChoice),
                             sections: (b.sections || []).map((s: any) => ({
                                 id: s.id,
                                 name: s.name,
                                 marksPerQuestion: s.marks_per_question || s.marksPerQuestion || 2,
                                 numberOfQuestions: s.number_of_questions || s.numberOfQuestions || 5,
                                 totalMarks: (s.marks_per_question || s.marksPerQuestion || 2) * (s.number_of_questions || s.numberOfQuestions || 5),
+                                difficulty: s.difficulty,
+                                blooms_levels: s.blooms_levels,
+                                isOrChoice: s.is_or_choice || s.isOrChoice || false,
+                                pairedWithId: s.paired_with_id || s.pairedWithId,
+                                pairLabel: s.pair_label || s.pairLabel,
                             })),
                         }));
                         setBlueprints(formattedBps);
@@ -220,6 +250,9 @@ function GeneratePaperContent() {
             const bp = blueprints.find(b => b.id === paramBlueprintId);
             if (bp) {
                 setSelectedBlueprint(bp);
+                if (bp.has_or_choices) {
+                    setUseOrPairing(true);
+                }
                 // If bank was also selected, jump to configure
                 if (selectedBank) setStep(3);
             }
@@ -329,7 +362,9 @@ function GeneratePaperContent() {
 
     // Blueprint total marks
     const targetBlueprintMarks = selectedBlueprint
-        ? selectedBlueprint.sections.reduce((acc: number, s: any) => acc + (s.totalMarks || 0), 0)
+        ? (selectedBlueprint.attempt_marks || (selectedBlueprint.has_or_choices
+            ? selectedBlueprint.sections.reduce((acc: number, s: any) => s.isOrChoice ? acc : acc + (s.totalMarks || 0), 0)
+            : selectedBlueprint.sections.reduce((acc: number, s: any) => acc + (s.totalMarks || 0), 0)))
         : 50;
 
     // Step 4: Run Paper Generation
@@ -352,9 +387,25 @@ function GeneratePaperContent() {
         try {
             const payload: any = {
                 title: `${subjectName} - ${examName}`,
+                exam_type: examName,
                 difficulty_preset: difficulty,
                 selected_units: selectedUnits,
                 selected_blooms: selectedBlooms,
+                // PCCOER Autonomous College Metadata
+                academic_year: academicYear,
+                term: term,
+                record_no: recordNo,
+                department: department,
+                student_class: studentClass,
+                div: division,
+                subject_name: subjectName,
+                subject_code: subjectCode,
+                exam_date: examDate,
+                duration: `${duration} Min`,
+                course_outcomes: courseOutcomes,
+                use_or_pairing: useOrPairing,
+                sub_questions_per_group: 3,
+                marks_per_sub_question: 5,
             };
 
             if (selectedBlueprint) {
@@ -364,12 +415,18 @@ function GeneratePaperContent() {
                     payload.blueprint = {
                         id: selectedBlueprint.id,
                         title: selectedBlueprint.name,
+                        has_or_choices: selectedBlueprint.has_or_choices,
+                        attempt_marks: selectedBlueprint.attempt_marks,
+                        gross_marks: selectedBlueprint.gross_marks,
                         sections: selectedBlueprint.sections.map((s: any) => ({
                             id: s.id,
                             name: s.name,
                             marks_per_question: s.marksPerQuestion,
                             number_of_questions: s.numberOfQuestions,
                             total_marks: s.totalMarks,
+                            is_or_choice: s.isOrChoice,
+                            paired_with_id: s.pairedWithId,
+                            pair_label: s.pairLabel,
                         }))
                     };
                 }
@@ -542,20 +599,21 @@ function GeneratePaperContent() {
     const handleExportDocx = async () => {
         try {
             const payload = {
-                department: 'Computer Engineering',
+                department,
                 subject: subjectName,
-                subject_code: 'CS301PC',
-                class: 'TE',
-                div: 'A, B, C, D, E, F',
-                academic_year: '2025 – 26',
-                term: 'II',
+                subject_code: subjectCode,
+                class: studentClass,
+                div: division,
+                academic_year: academicYear,
+                term,
                 exam_type: examName,
                 max_marks: targetBlueprintMarks,
                 duration: `${duration} Min`,
-                date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
-                record_no: 'ACAD/R/11',
+                date: examDate,
+                record_no: recordNo,
                 rev: '00',
                 rev_date: '01-09-2025',
+                co_list: courseOutcomes,
                 sections: paperSections,
             };
 
@@ -899,12 +957,18 @@ function GeneratePaperContent() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {blueprints.map((bp) => {
                                     const isSel = selectedBlueprint?.id === bp.id;
-                                    const total = bp.sections.reduce((acc: number, s: any) => acc + (s.totalMarks || 0), 0);
+                                    const attemptMarks = bp.attempt_marks || bp.total_marks || bp.sections.reduce((acc: number, s: any) => s.isOrChoice ? acc : acc + (s.totalMarks || 0), 0);
+                                    const grossMarks = bp.gross_marks || bp.sections.reduce((acc: number, s: any) => acc + (s.totalMarks || 0), 0);
 
                                     return (
                                         <Card
                                             key={bp.id}
-                                            onClick={() => setSelectedBlueprint(bp)}
+                                            onClick={() => {
+                                                setSelectedBlueprint(bp);
+                                                if (bp.has_or_choices) {
+                                                    setUseOrPairing(true);
+                                                }
+                                            }}
                                             className={`cursor-pointer border-2 transition-all p-5 rounded-xl backdrop-blur-sm ${
                                                 isSel
                                                     ? 'bg-amber-500/10 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
@@ -913,18 +977,30 @@ function GeneratePaperContent() {
                                         >
                                             <div className="flex justify-between items-start mb-3">
                                                 <div>
-                                                    <h4 className="font-bold text-white text-base">{bp.name}</h4>
-                                                    <p className="text-xs text-slate-400 mt-0.5">{bp.sections.length} Sections</p>
+                                                    <div className="flex items-center space-x-2">
+                                                        <h4 className="font-bold text-white text-base">{bp.name}</h4>
+                                                        {bp.has_or_choices && (
+                                                            <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-[10px] font-semibold">
+                                                                OR Choice
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-slate-400 mt-0.5">
+                                                        {bp.sections.length} Sections {bp.has_or_choices ? `• ${grossMarks}M Gross Paper` : ''}
+                                                    </p>
                                                 </div>
                                                 <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-xs font-bold px-2.5 py-1">
-                                                    {total} Marks
+                                                    {attemptMarks} Marks
                                                 </Badge>
                                             </div>
 
                                             <div className="space-y-1.5 bg-slate-950/50 p-3 rounded-lg border border-slate-800/80 text-xs text-slate-300">
                                                 {bp.sections.map((s: any) => (
                                                     <div key={s.id} className="flex justify-between items-center">
-                                                        <span>{s.name} ({s.numberOfQuestions} × {s.marksPerQuestion}m)</span>
+                                                        <span className={s.isOrChoice ? 'text-purple-300 pl-2 border-l border-purple-500/50' : ''}>
+                                                            {s.isOrChoice && <span className="font-bold text-purple-400 mr-1">OR</span>}
+                                                            {s.name} ({s.numberOfQuestions} × {s.marksPerQuestion}m)
+                                                        </span>
                                                         <span className="font-bold text-amber-400">{s.totalMarks} M</span>
                                                     </div>
                                                 ))}
@@ -1216,6 +1292,194 @@ function GeneratePaperContent() {
                                         })}
                                     </div>
                                 </div>
+
+                                {/* Autonomous College Examination Format (PCET PCCOER Ravet) */}
+                                <div className="space-y-4 pt-4 border-t border-slate-800/80">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-2">
+                                            <FileText className="w-4 h-4 text-amber-400" />
+                                            <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                                                Autonomous College Format (PCET PCCOER Ravet)
+                                            </h4>
+                                        </div>
+                                        <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px]">
+                                            Autonomous Format
+                                        </Badge>
+                                    </div>
+
+                                    {/* OR-Choice Pairing Toggle */}
+                                    <div className="p-3.5 rounded-xl bg-slate-950/80 border border-amber-500/30 flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <span className="text-xs font-bold text-amber-300">
+                                                Automated Choice Engine (Q1 &quot;OR&quot; Q2, Q3 &quot;OR&quot; Q4)
+                                            </span>
+                                            <p className="text-[11px] text-slate-400">
+                                                Automatically generates balanced OR alternatives with strictly matching difficulty and Bloom&apos;s level.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setUseOrPairing(!useOrPairing)}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                                                useOrPairing ? 'bg-amber-500' : 'bg-slate-700'
+                                            }`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                                    useOrPairing ? 'translate-x-6' : 'translate-x-1'
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    {/* College Metadata Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Department</label>
+                                            <Input
+                                                value={department}
+                                                onChange={(e) => setDepartment(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. Computer Engineering"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Subject Code</label>
+                                            <Input
+                                                value={subjectCode}
+                                                onChange={(e) => setSubjectCode(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. CS301PC"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Class (SE / TE / BE)</label>
+                                            <Input
+                                                value={studentClass}
+                                                onChange={(e) => setStudentClass(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. SE"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Divisions</label>
+                                            <Input
+                                                value={division}
+                                                onChange={(e) => setDivision(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. A, B, C, D, E, F"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Academic Year</label>
+                                            <Input
+                                                value={academicYear}
+                                                onChange={(e) => setAcademicYear(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. 2025 – 26"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Term</label>
+                                            <Input
+                                                value={term}
+                                                onChange={(e) => setTerm(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. II"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Exam Date</label>
+                                            <Input
+                                                value={examDate}
+                                                onChange={(e) => setExamDate(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. 16-02-2026"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] font-semibold text-slate-300">Record No</label>
+                                            <Input
+                                                value={recordNo}
+                                                onChange={(e) => setRecordNo(e.target.value)}
+                                                className="bg-slate-950 border-slate-800 text-white h-9 text-xs"
+                                                placeholder="e.g. ACAD/R/11"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Course Outcomes (CO) Mapping */}
+                                    <div className="space-y-2 pt-2">
+                                        <div className="flex justify-between items-center">
+                                            <label className="text-xs font-semibold text-slate-300 uppercase">
+                                                Course Outcomes (CO Table)
+                                            </label>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setCourseOutcomes(prev => [
+                                                    ...prev,
+                                                    { co: `CO${prev.length + 1}`, desc: '', bt: 'L3' }
+                                                ])}
+                                                className="text-[11px] border-slate-700 bg-slate-800 text-white h-7 px-2"
+                                            >
+                                                <Plus className="w-3 h-3 mr-1" /> Add CO
+                                            </Button>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            {courseOutcomes.map((coItem, coIdx) => (
+                                                <div key={coIdx} className="grid grid-cols-12 gap-2 p-2 bg-slate-950/70 rounded-xl border border-slate-800 items-center">
+                                                    <div className="col-span-2">
+                                                        <Input
+                                                            value={coItem.co}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setCourseOutcomes(prev => prev.map((c, i) => i === coIdx ? { ...c, co: val } : c));
+                                                            }}
+                                                            className="bg-slate-900 border-slate-700 text-white h-8 text-xs font-bold"
+                                                            placeholder="CO"
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-7">
+                                                        <Input
+                                                            value={coItem.desc}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setCourseOutcomes(prev => prev.map((c, i) => i === coIdx ? { ...c, desc: val } : c));
+                                                            }}
+                                                            className="bg-slate-900 border-slate-700 text-white h-8 text-xs"
+                                                            placeholder="Course Outcome Description..."
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-2">
+                                                        <Input
+                                                            value={coItem.bt}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setCourseOutcomes(prev => prev.map((c, i) => i === coIdx ? { ...c, bt: val } : c));
+                                                            }}
+                                                            className="bg-slate-900 border-slate-700 text-white h-8 text-xs text-center"
+                                                            placeholder="BT"
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-1 text-right">
+                                                        {courseOutcomes.length > 1 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setCourseOutcomes(prev => prev.filter((_, i) => i !== coIdx))}
+                                                                className="text-slate-500 hover:text-red-400 p-1"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
                             </Card>
                         </div>
 
@@ -1401,13 +1665,19 @@ function GeneratePaperContent() {
                     <div className="rounded-2xl p-2 md:p-4 shadow-2xl backdrop-blur-sm bg-slate-900/40 border border-slate-800">
                         <CollegeQuestionPaper
                             paper={{ sections: paperSections, title: subjectName, exam_type: examName }}
-                            department="Computer Engineering"
-                            subjectName={subjectName}
-                            subjectCode="CS301PC"
+                            academicYear={academicYear}
+                            term={term}
                             examType={examName}
-                            duration={`${duration} Min`}
+                            department={department}
+                            subjectName={subjectName}
+                            subjectCode={subjectCode}
+                            className={studentClass}
+                            div={division}
                             maxMarks={targetBlueprintMarks}
-                            date={new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')}
+                            duration={`${duration} Min`}
+                            date={examDate}
+                            recordNo={recordNo}
+                            courseOutcomes={courseOutcomes}
                             editable={true}
                             onReplaceQuestion={handleOpenReplaceModal}
                             onEditQuestion={(secIdx, qIdx, q) => setEditingQuestion({ sectionIndex: secIdx, questionIndex: qIdx, text: q.text, marks: q.marks })}

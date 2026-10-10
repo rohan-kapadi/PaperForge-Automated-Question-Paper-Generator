@@ -160,6 +160,53 @@ export default function GeneratedPapersPage() {
                                     <Eye className="w-4 h-4 mr-1.5" /> Preview
                                 </Button>
                                 <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async () => {
+                                        try {
+                                            const header = (paper as any).content?.header || {};
+                                            const payload = {
+                                                department: header.department || 'Computer Engineering',
+                                                subject: header.subject_name || paper.title || 'Examination Paper',
+                                                subject_code: header.subject_code || 'CS301PC',
+                                                class: header.student_class || 'SE',
+                                                div: header.div || 'A, B, C, D, E, F',
+                                                academic_year: header.academic_year || '2025 – 26',
+                                                term: header.term || 'II',
+                                                exam_type: header.exam_type_display || paper.exam_type || 'UNIT TEST',
+                                                max_marks: paper.total_marks || paper.totalMarks || 30,
+                                                duration: header.duration || `${header.duration_minutes || 60} Min`,
+                                                date: header.exam_date || '',
+                                                record_no: header.record_no || 'ACAD/R/11',
+                                                rev: header.rev || '00',
+                                                rev_date: header.rev_date || '01-09-2025',
+                                                co_list: header.course_outcomes || [],
+                                                sections: (paper as any).content?.sections || paper.sections || [],
+                                            };
+                                            const res = await fetch(`${BACKEND_URL}/papers/export/docx`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify(payload),
+                                            });
+                                            if (!res.ok) throw new Error('Export failed');
+                                            const blob = await res.blob();
+                                            const url = window.URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `${(paper.title || 'Paper').replace(/\s+/g, '_')}_PCCOER.docx`;
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            a.remove();
+                                            window.URL.revokeObjectURL(url);
+                                        } catch {
+                                            alert('Failed to download Word document. Please ensure backend services are running.');
+                                        }
+                                    }}
+                                    className="bg-blue-950/60 border-blue-800 text-blue-300 hover:text-white hover:bg-blue-800 text-xs"
+                                >
+                                    <Download className="w-3.5 h-3.5 mr-1 text-blue-400" /> Word (.docx)
+                                </Button>
+                                <Button
                                     size="sm"
                                     onClick={() => {
                                         setPreviewPaper(paper);
