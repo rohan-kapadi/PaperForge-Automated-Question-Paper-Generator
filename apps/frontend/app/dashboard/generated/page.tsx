@@ -5,8 +5,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FileText, Download, Eye, Calendar, Clock, Sparkles, Printer, X, Loader2, CheckCircle2 } from 'lucide-react';
-import { mockGeneratedPapers, GeneratedPaper } from '@/lib/mockData';
+import { FileText, Download, Eye, Calendar, Clock, Sparkles, Printer, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CollegeQuestionPaper from '@/components/CollegeQuestionPaper';
 
@@ -30,36 +29,26 @@ interface RealPaper {
 export default function GeneratedPapersPage() {
     const [papers, setPapers] = useState<RealPaper[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [previewPaper, setPreviewPaper] = useState<RealPaper | null>(null);
 
     const fetchPapers = async () => {
         setIsLoading(true);
+        setError(null);
         try {
             const res = await fetch(`${BACKEND_URL}/papers`);
             if (res.ok) {
                 const data = await res.json();
-                if (data && data.length > 0) {
-                    setPapers(data);
-                    return;
-                }
+                setPapers(data || []);
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                setError(errData.message || `Failed to fetch generated papers (${res.status})`);
+                setPapers([]);
             }
-            // Fallback to mock papers if none generated yet
-            setPapers(mockGeneratedPapers.map(p => ({
-                id: p.id,
-                title: p.title,
-                totalMarks: p.totalMarks,
-                date: p.date,
-                status: 'Approved',
-            })));
-        } catch (err) {
+        } catch (err: any) {
             console.error('Fetch papers error:', err);
-            setPapers(mockGeneratedPapers.map(p => ({
-                id: p.id,
-                title: p.title,
-                totalMarks: p.totalMarks,
-                date: p.date,
-                status: 'Approved',
-            })));
+            setError('Unable to connect to backend server. Please verify the service is running.');
+            setPapers([]);
         } finally {
             setIsLoading(false);
         }
@@ -97,7 +86,25 @@ export default function GeneratedPapersPage() {
                 </div>
             )}
 
-            {!isLoading && papers.length === 0 && (
+            {!isLoading && error && (
+                <div className="flex flex-col items-center justify-center py-16 bg-slate-900/30 border border-rose-500/20 rounded-2xl text-center p-6 space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mx-auto">
+                        <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-1">Failed to Load Papers</h3>
+                        <p className="text-sm text-slate-400 max-w-md mx-auto">{error}</p>
+                    </div>
+                    <Button
+                        onClick={fetchPapers}
+                        className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
+                    >
+                        Retry
+                    </Button>
+                </div>
+            )}
+
+            {!isLoading && !error && papers.length === 0 && (
                 <div className="text-center py-20 bg-slate-900/30 border border-slate-800 rounded-2xl">
                     <p className="text-slate-400">No examination papers generated yet.</p>
                     <Link href="/dashboard/generate" className="mt-3 inline-block">
@@ -108,7 +115,7 @@ export default function GeneratedPapersPage() {
                 </div>
             )}
 
-            {!isLoading && papers.length > 0 && (
+            {!isLoading && !error && papers.length > 0 && (
                 <div className="space-y-4">
                     {papers.map((paper) => (
                         <div

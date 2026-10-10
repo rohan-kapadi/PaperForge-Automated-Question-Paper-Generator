@@ -10,7 +10,7 @@ import { Search, Plus, Trash2, Save, FileCheck, AlertCircle, Loader2, ArrowRight
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
-import { mockBlueprints, Blueprint } from '@/lib/mockData';
+import { Blueprint } from '@/lib/types';
 
 const BACKEND_URL = 'http://localhost:3001';
 
@@ -21,18 +21,35 @@ export default function ManualSelectionPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [selectedBlueprint, setSelectedBlueprint] = useState<Blueprint | null>(null);
+    const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
     const [banks, setBanks] = useState<any[]>([]);
     const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
 
     useEffect(() => {
         const fetchAll = async () => {
             try {
-                const [resQ, resB] = await Promise.all([
+                const [resQ, resB, resBP] = await Promise.all([
                     fetch(`${BACKEND_URL}/questions`),
-                    fetch(`${BACKEND_URL}/questions/banks`)
+                    fetch(`${BACKEND_URL}/questions/banks`),
+                    fetch(`${BACKEND_URL}/blueprints`)
                 ]);
                 if (resQ.ok) setQuestions(await resQ.json());
                 if (resB.ok) setBanks(await resB.json());
+                if (resBP.ok) {
+                    const bpData = await resBP.json();
+                    const formatted = (bpData || []).map((b: any) => ({
+                        id: b.id,
+                        name: b.title || b.name,
+                        sections: (b.sections || []).map((s: any) => ({
+                            id: s.id,
+                            name: s.name,
+                            marksPerQuestion: s.marks_per_question ?? s.marksPerQuestion ?? 2,
+                            numberOfQuestions: s.number_of_questions ?? s.numberOfQuestions ?? 5,
+                            totalMarks: (s.marks_per_question ?? s.marksPerQuestion ?? 2) * (s.number_of_questions ?? s.numberOfQuestions ?? 5),
+                        }))
+                    }));
+                    setBlueprints(formatted);
+                }
             } catch (err) {
                 console.error(err);
             } finally {
@@ -87,33 +104,44 @@ export default function ManualSelectionPage() {
                     <p className="text-slate-400 text-sm">Choose a blueprint before manually selecting questions.</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {mockBlueprints.map((bp) => (
-                        <Card 
-                            key={bp.id} 
-                            className={cn("cursor-pointer border-2 transition-all bg-slate-900/50 hover:bg-slate-900/80", selectedBlueprint?.id === bp.id ? "border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "border-slate-800")}
-                            onClick={() => setSelectedBlueprint(bp)}
-                        >
-                            <CardHeader>
-                                <CardTitle className="text-white">{bp.name}</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <ul className="space-y-2 text-sm text-slate-400">
-                                    {bp.sections.map(s => (
-                                        <li key={s.id} className="flex justify-between">
-                                            <span>{s.name} ({s.numberOfQuestions} × {s.marksPerQuestion}m)</span>
-                                            <span className="text-slate-300 font-medium">{s.totalMarks}m</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                                <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">Total Marks</span>
-                                    <span className="text-amber-500 font-bold text-lg">
-                                        {bp.sections.reduce((acc, s) => acc + s.totalMarks, 0)}
-                                    </span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                    {blueprints.length === 0 ? (
+                        <div className="col-span-full p-8 border border-dashed border-slate-800 rounded-xl text-center bg-slate-900/40">
+                            <p className="text-slate-400">No blueprints found.</p>
+                            <Link href="/dashboard/blueprints">
+                                <Button className="mt-4 bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold">
+                                    Create Blueprint
+                                </Button>
+                            </Link>
+                        </div>
+                    ) : (
+                        blueprints.map((bp: Blueprint) => (
+                            <Card 
+                                key={bp.id} 
+                                className={cn("cursor-pointer border-2 transition-all bg-slate-900/50 hover:bg-slate-900/80", selectedBlueprint?.id === bp.id ? "border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "border-slate-800")}
+                                onClick={() => setSelectedBlueprint(bp)}
+                            >
+                                <CardHeader>
+                                    <CardTitle className="text-white">{bp.name}</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <ul className="space-y-2 text-sm text-slate-400">
+                                        {bp.sections.map((s) => (
+                                            <li key={s.id} className="flex justify-between">
+                                                <span>{s.name} ({s.numberOfQuestions} × {s.marksPerQuestion}m)</span>
+                                                <span className="text-slate-300 font-medium">{s.totalMarks}m</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center text-sm">
+                                        <span className="text-slate-500">Total Marks</span>
+                                        <span className="text-amber-500 font-bold text-lg">
+                                            {bp.sections.reduce((acc: number, s) => acc + s.totalMarks, 0)}
+                                        </span>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))
+                    )}
                 </div>
                 <div className="flex justify-end pt-4">
                     <Button 
