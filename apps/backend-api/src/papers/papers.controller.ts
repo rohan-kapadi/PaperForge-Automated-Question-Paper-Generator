@@ -63,6 +63,7 @@ export class PapersController {
             co_list: header.course_outcomes || [],
             content: paper.content,
             sections: paper.content?.sections || paper.sections || [],
+            questions: paper.content?.questions || (paper as any).questions || [],
         };
         const buffer = await this.papersService.exportDocx(payload);
         const filename = `${(paper.title || 'Question_Paper').replace(/\s+/g, '_')}_PCCOER.docx`;

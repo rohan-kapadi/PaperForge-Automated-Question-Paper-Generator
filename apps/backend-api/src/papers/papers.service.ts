@@ -292,12 +292,15 @@ export class PapersService {
             const targetCount = Number(sec.number_of_questions ?? sec.numberOfQuestions ?? sec.targetCount ?? 1);
             const secName = sec.name || `Section ${String.fromCharCode(65 + sIdx)}`;
 
-            // Candidates matching marks and not yet used
-            let candidates = allQuestions.filter(q => {
-                if (usedIds.has(q.id) || avoidIds.has(q.id)) return false;
-                const qMarks = Number(q.marks || 5);
-                return qMarks === targetMarks;
-            });
+            // Sub-question marks breakdown (e.g. [4, 5, 5] for cumulative marks)
+            const rawSubMarks = sec.sub_question_marks || sec.subQuestionMarks;
+            const subMarksList: number[] = Array.isArray(rawSubMarks) && rawSubMarks.length > 0
+                ? rawSubMarks.map(Number)
+                : Array(targetCount).fill(targetMarks);
+            const actualCount = subMarksList.length;
+
+            // Candidates not yet used
+            let candidates = allQuestions.filter(q => !usedIds.has(q.id) && !avoidIds.has(q.id));
 
             // Filter by selected units if requested
             if (dto.selected_units && dto.selected_units.length > 0) {
@@ -305,118 +308,90 @@ export class PapersService {
                     const u = q.unit || q.topic || '';
                     return dto.selected_units!.some(su => u.toLowerCase().includes(su.toLowerCase()));
                 });
-                if (unitCandidates.length >= targetCount) {
+                if (unitCandidates.length >= actualCount) {
                     candidates = unitCandidates;
                 } else if (unitCandidates.length > 0) {
-                    warnings.push(`${secName}: Only ${unitCandidates.length} of ${targetCount} questions match the selected units; included other units to satisfy count.`);
+                    warnings.push(`${secName}: Only ${unitCandidates.length} of ${actualCount} questions match the selected units; included other units to satisfy count.`);
                 }
             }
 
-            // Filter by section difficulty constraints if specified
-            if (sec.difficulty && Array.isArray(sec.difficulty) && sec.difficulty.length > 0) {
-                const diffCandidates = candidates.filter(q => sec.difficulty.includes(q.difficulty));
-                if (diffCandidates.length >= targetCount) {
-                    candidates = diffCandidates;
-                } else {
-                    warnings.push(`${secName}: Not enough questions matching difficulty [${sec.difficulty.join(', ')}]. Relaxed difficulty constraint.`);
-                }
-            }
-
-            // Filter by Bloom's levels if specified
-            if (sec.blooms_levels && Array.isArray(sec.blooms_levels) && sec.blooms_levels.length > 0) {
-                const bloomCandidates = candidates.filter(q => sec.blooms_levels.includes(q.blooms_level));
-                if (bloomCandidates.length >= targetCount) {
-                    candidates = bloomCandidates;
-                }
-            }
-
-            // If not enough questions matching exact marks, allow close marks (+-2) or any unused questions from bank
-            if (candidates.length < targetCount) {
-                let fallbackCandidates = allQuestions.filter(q => {
-                    if (usedIds.has(q.id) || avoidIds.has(q.id)) return false;
-                    const diff = Math.abs(Number(q.marks || 5) - targetMarks);
-                    return diff <= 2;
-                });
-                if (fallbackCandidates.length < targetCount) {
-                    fallbackCandidates = allQuestions.filter(q => !usedIds.has(q.id) && !avoidIds.has(q.id));
-                }
-                if (fallbackCandidates.length > candidates.length) {
-                    candidates = fallbackCandidates;
-                    warnings.push(`${secName}: Insufficient ${targetMarks}-mark questions; selected available bank alternatives.`);
-                }
-            }
-
-            // Sort candidates by AI classification confidence descending (favor high-quality questions)
+            // Sort candidates by AI classification confidence descending
             candidates.sort((a, b) => {
                 const confA = a.metadata?.confidence?.overall || 0.5;
                 const confB = b.metadata?.confidence?.overall || 0.5;
                 return confB - confA;
             });
 
-            // Pick questions
+            // Pick questions matching each sub-question mark slot
             const selectedForSec: any[] = [];
             const isOrAlternative = dto.use_or_pairing && (sIdx % 2 === 1) && builtSections.length >= sIdx;
             const primarySec = isOrAlternative ? builtSections[sIdx - 1] : null;
 
-            if (primarySec && primarySec.questions && primarySec.questions.length > 0) {
-                // Pedagogical parity: pick questions mirroring the primary section's cognitive profile
-                for (const primQ of primarySec.questions) {
-                    if (selectedForSec.length >= targetCount) break;
-                    const match = this.findMatchingCandidate(candidates, {
-                        marks: targetMarks,
-                        difficulty: primQ.difficulty,
-                        blooms_level: primQ.blooms_level,
-                        unit: primQ.unit,
+            for (let slotIdx = 0; slotIdx < subMarksList.length; slotIdx++) {
+                const slotMarks = subMarksList[slotIdx];
+                const primQ = primarySec?.questions?.[slotIdx];
+
+                // 1. Try finding matching candidate with slotMarks, difficulty, bloom
+                let match = candidates.find(q => {
+                    if (usedIds.has(q.id)) return false;
+                    const qMarks = Number(q.marks || 5);
+                    if (qMarks !== slotMarks) return false;
+                    if (primQ && primQ.difficulty && q.difficulty !== primQ.difficulty) return false;
+                    if (sec.difficulty && sec.difficulty.length > 0 && !sec.difficulty.includes(q.difficulty)) return false;
+                    return true;
+                });
+
+                // 2. Fallback: exact mark match
+                if (!match) {
+                    match = candidates.find(q => !usedIds.has(q.id) && Number(q.marks || 5) === slotMarks);
+                }
+
+                // 3. Fallback: closest mark (within 2 marks)
+                if (!match) {
+                    match = candidates.find(q => !usedIds.has(q.id) && Math.abs(Number(q.marks || 5) - slotMarks) <= 2);
+                }
+
+                // 4. Final fallback: any available question
+                if (!match) {
+                    match = candidates.find(q => !usedIds.has(q.id));
+                }
+
+                if (match) {
+                    usedIds.add(match.id);
+                    candidates = candidates.filter(c => c.id !== match.id);
+                    selectedForSec.push({
+                        id: match.id,
+                        text: match.text || match.question_text,
+                        marks: slotMarks,
+                        difficulty: match.difficulty || 'Medium',
+                        blooms_level: match.blooms_level || 'L2_Understand',
+                        topic: match.topic || match.subject || 'General',
+                        unit: match.unit || 'Unit 1',
+                        co: match.co || primQ?.co || `CO${(sIdx % 3) + 1}`,
+                        question_type: match.question_type || 'Short Answer',
+                        classification_source: match.classification_source || 'ai',
                     });
-                    if (match) {
-                        usedIds.add(match.id);
-                        candidates = candidates.filter(c => c.id !== match.id);
-                        selectedForSec.push({
-                            id: match.id,
-                            text: match.text || match.question_text,
-                            marks: targetMarks,
-                            difficulty: match.difficulty || 'Medium',
-                            blooms_level: match.blooms_level || 'L2_Understand',
-                            topic: match.topic || match.subject || 'General',
-                            unit: match.unit || 'Unit 1',
-                            co: match.co || primQ.co || 'CO1',
-                            question_type: match.question_type || 'Short Answer',
-                            classification_source: match.classification_source || 'ai',
-                        });
-                    }
                 }
             }
 
-            // Fill remaining slots if any
-            for (let i = 0; selectedForSec.length < targetCount && i < candidates.length; i++) {
-                const pick = candidates[i];
-                if (usedIds.has(pick.id)) continue;
-                usedIds.add(pick.id);
-                selectedForSec.push({
-                    id: pick.id,
-                    text: pick.text || pick.question_text,
-                    marks: targetMarks,
-                    difficulty: pick.difficulty || 'Medium',
-                    blooms_level: pick.blooms_level || 'L2_Understand',
-                    topic: pick.topic || pick.subject || 'General',
-                    unit: pick.unit || 'Unit 1',
-                    co: pick.co || `CO${(sIdx % 3) + 1}`,
-                    question_type: pick.question_type || 'Short Answer',
-                    classification_source: pick.classification_source || 'ai',
-                });
+            if (selectedForSec.length < actualCount) {
+                warnings.push(`${secName}: Requested ${actualCount} questions, but only ${selectedForSec.length} available matching criteria.`);
             }
 
-            if (selectedForSec.length < targetCount) {
-                warnings.push(`${secName}: Requested ${targetCount} questions, but only ${selectedForSec.length} available matching criteria.`);
-            }
+            const secTotalMarks = selectedForSec.reduce((sum, q) => sum + Number(q.marks || 0), 0);
 
             builtSections.push({
                 id: sec.id || `s${sIdx + 1}`,
                 name: secName,
-                marksPerQuestion: targetMarks,
-                targetCount,
-                totalMarks: targetMarks * selectedForSec.length,
+                marksPerQuestion: subMarksList[0] || targetMarks,
+                subQuestionMarks: subMarksList,
+                targetCount: actualCount,
+                totalMarks: secTotalMarks,
                 questions: selectedForSec,
+                is_or_choice: !!(sec.is_or_choice ?? sec.isOrChoice),
+                isOrChoice: !!(sec.is_or_choice ?? sec.isOrChoice),
+                paired_with_id: sec.paired_with_id || sec.pairedWithId,
+                pair_label: sec.pair_label || sec.pairLabel,
             });
         }
 
@@ -619,11 +594,11 @@ export class PapersService {
 
         // Step 7.2: State machine check for valid transitions
         const VALID_TRANSITIONS: Record<string, string[]> = {
-            'Generated': ['Submitted_For_Review', 'Draft'],
-            'Draft': ['Submitted_For_Review'],
+            'Generated': ['Submitted_For_Review', 'Draft', 'Approved', 'Rejected'],
+            'Draft': ['Submitted_For_Review', 'Approved', 'Rejected'],
             'Submitted_For_Review': ['Approved', 'Rejected'],
-            'Rejected': ['Draft', 'Submitted_For_Review'],
-            'Approved': ['Draft'],
+            'Rejected': ['Draft', 'Submitted_For_Review', 'Approved'],
+            'Approved': ['Draft', 'Rejected'],
         };
 
         if (currentStatus !== dto.status) {

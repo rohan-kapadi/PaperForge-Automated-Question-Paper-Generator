@@ -26,6 +26,11 @@ export class BlueprintSectionConfig {
 
     @IsOptional()
     @IsArray()
+    @IsNumber({}, { each: true })
+    sub_question_marks?: number[];  // e.g. [4, 5, 5] for cumulative marks breakdown
+
+    @IsOptional()
+    @IsArray()
     @IsString({ each: true })
     difficulty?: string[];          // e.g. ['Easy', 'Medium']
 

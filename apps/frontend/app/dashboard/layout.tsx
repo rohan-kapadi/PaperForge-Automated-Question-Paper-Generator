@@ -19,10 +19,14 @@ import {
     Menu,
     X,
     User,
-    Shield,
-    ShieldAlert
+    ShieldCheck,
+    CheckCircle,
+    BookOpen,
+    Printer,
+    Clock,
+    XCircle,
 } from 'lucide-react';
-import { AuthProvider, useAuth, UserRole } from '@/lib/auth-context';
+import { AuthProvider, useAuth, UserRole, getDashboardPathForRole } from '@/lib/auth-context';
 
 interface NavItem {
     icon: any;
@@ -37,7 +41,8 @@ interface NavGroup {
     items: NavItem[];
 }
 
-const navGroups: NavGroup[] = [
+// Nav items for Teachers (default)
+const teacherNavGroups: NavGroup[] = [
     {
         title: 'OVERVIEW',
         items: [
@@ -56,7 +61,7 @@ const navGroups: NavGroup[] = [
             { icon: Database, label: 'Question Banks', href: '/dashboard/banks' },
             { icon: Library, label: 'Question Library', href: '/dashboard/library' },
             { icon: ClipboardList, label: 'Blueprints', href: '/dashboard/blueprints' },
-            { icon: FileText, label: 'Generated Papers', href: '/dashboard/generated' },
+            { icon: FileText, label: 'My Papers', href: '/dashboard/generated' },
         ],
     },
     {
@@ -68,13 +73,80 @@ const navGroups: NavGroup[] = [
     },
 ];
 
-const allNavItems = navGroups.flatMap(g => g.items);
+// Nav items for HOD
+const hodNavGroups: NavGroup[] = [
+    {
+        title: 'OVERVIEW',
+        items: [
+            { icon: LayoutDashboard, label: 'Approval Queue', href: '/dashboard/hod', highlight: true },
+        ],
+    },
+    {
+        title: 'APPROVALS',
+        items: [
+            { icon: Clock, label: 'Pending Approvals', href: '/dashboard/hod?tab=pending', badge: '!' },
+            { icon: CheckCircle, label: 'Approved Papers', href: '/dashboard/hod?tab=approved' },
+            { icon: XCircle, label: 'Rejected Papers', href: '/dashboard/hod?tab=rejected' },
+        ],
+    },
+    {
+        title: 'SYSTEM',
+        items: [
+            { icon: History, label: 'Audit Logs', href: '/dashboard/audit' },
+            { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
+        ],
+    },
+];
+
+// Nav items for Exam Section
+const examSectionNavGroups: NavGroup[] = [
+    {
+        title: 'OVERVIEW',
+        items: [
+            { icon: LayoutDashboard, label: 'Exam Dashboard', href: '/dashboard/examsection', highlight: true },
+        ],
+    },
+    {
+        title: 'PRINTING',
+        items: [
+            { icon: CheckCircle, label: 'All Approved', href: '/dashboard/examsection?filter=all' },
+            { icon: FileText, label: 'Ready to Print', href: '/dashboard/examsection?filter=not_printed' },
+            { icon: Printer, label: 'Print Queue', href: '/dashboard/examsection?filter=in_queue' },
+        ],
+    },
+    {
+        title: 'SYSTEM',
+        items: [
+            { icon: History, label: 'Audit Logs', href: '/dashboard/audit' },
+            { icon: Settings, label: 'Settings', href: '/dashboard/settings' },
+        ],
+    },
+];
+
+function getNavGroupsForRole(role: UserRole): NavGroup[] {
+    if (role === 'HOD' || role === 'Admin') return hodNavGroups;
+    if (role === 'ExamSection') return examSectionNavGroups;
+    return teacherNavGroups;
+}
+
+function getRoleAccentColor(role: UserRole) {
+    if (role === 'HOD') return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+    if (role === 'ExamSection') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+    if (role === 'Admin') return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+    return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+}
+
+function getRoleIcon(role: UserRole) {
+    if (role === 'HOD' || role === 'Admin') return ShieldCheck;
+    if (role === 'ExamSection') return BookOpen;
+    return User;
+}
 
 function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const { user, profile, role, isHODOrAdmin, roleOverride, setRoleOverride, signOut, isLoading } = useAuth();
+    const { user, profile, role, isLoading, signOut } = useAuth();
 
     useEffect(() => {
         if (!isLoading && !user) {
@@ -82,10 +154,23 @@ function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
         }
     }, [user, isLoading, router]);
 
+    // On first load after auth, redirect HOD/ExamSection to their correct home if they land on /dashboard
+    useEffect(() => {
+        if (!isLoading && user && pathname === '/dashboard') {
+            const target = getDashboardPathForRole(role);
+            if (target !== '/dashboard') {
+                router.replace(target);
+            }
+        }
+    }, [isLoading, user, role, pathname, router]);
+
     const handleLogout = async () => {
         await signOut();
         router.push('/login');
     };
+
+    const navGroups = getNavGroupsForRole(role);
+    const allNavItems = navGroups.flatMap(g => g.items);
 
     const getPageTitle = () => {
         const matched = allNavItems.find(item => item.href === pathname);
@@ -94,10 +179,12 @@ function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
         if (pathname === '/dashboard/manual') return 'Manual Selection';
         if (pathname === '/dashboard/upload') return 'Upload Question Bank';
         if (pathname === '/dashboard/blueprint') return 'Blueprint Builder';
+        if (pathname.startsWith('/dashboard/hod')) return 'HOD Dashboard';
+        if (pathname.startsWith('/dashboard/examsection')) return 'Exam Section Dashboard';
         return 'Dashboard';
     };
 
-    const currentPage = getPageTitle();
+    const RoleIcon = getRoleIcon(role);
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-amber-500/30">
@@ -126,7 +213,7 @@ function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
                     <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800">
                         {sidebarOpen ? (
                             <>
-                                <Link href="/dashboard" className="flex items-center space-x-3">
+                                <Link href={getDashboardPathForRole(role)} className="flex items-center space-x-3">
                                     <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-orange-500 rounded-lg flex items-center justify-center shadow-lg shadow-amber-500/20">
                                         <FileText className="w-5 h-5 text-slate-900" />
                                     </div>
@@ -159,38 +246,38 @@ function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
                                     </p>
                                 )}
                                 <ul className="space-y-1">
-                                    {group.items.map((item) => {
-                                        const Icon = item.icon;
-                                        const isActive = pathname === item.href;
+                                    {group.items.map((navItem) => {
+                                        const Icon = navItem.icon;
+                                        const isActive = pathname === navItem.href;
 
                                         return (
-                                            <li key={item.href}>
+                                            <li key={navItem.href}>
                                                 <Link
-                                                    href={item.href}
+                                                    href={navItem.href}
                                                     className={cn(
                                                         'flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 group text-sm relative',
                                                         isActive
                                                             ? 'bg-amber-500 text-slate-900 font-semibold shadow-lg shadow-amber-500/20'
-                                                            : item.highlight
+                                                            : navItem.highlight
                                                             ? 'text-amber-400 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 hover:text-amber-300 font-medium'
                                                             : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                                                     )}
                                                 >
                                                     <Icon className={cn(
                                                         'w-4 h-4 transition-colors flex-shrink-0',
-                                                        isActive 
-                                                            ? 'text-slate-900' 
-                                                            : item.highlight
+                                                        isActive
+                                                            ? 'text-slate-900'
+                                                            : navItem.highlight
                                                             ? 'text-amber-400'
                                                             : 'group-hover:text-amber-400',
                                                         sidebarOpen ? '' : 'mx-auto'
                                                     )} />
                                                     {sidebarOpen && (
-                                                        <span className="flex-1 truncate">{item.label}</span>
+                                                        <span className="flex-1 truncate">{navItem.label}</span>
                                                     )}
-                                                    {sidebarOpen && item.badge && !isActive && (
+                                                    {sidebarOpen && navItem.badge && !isActive && (
                                                         <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                                            {item.badge}
+                                                            {navItem.badge}
                                                         </span>
                                                     )}
                                                 </Link>
@@ -202,26 +289,21 @@ function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
                         ))}
                     </nav>
 
-                    {/* User Profile & Role (Bottom Sidebar) */}
+                    {/* User Profile (Bottom Sidebar) */}
                     <div className="p-4 border-t border-slate-800 space-y-2">
                         <div className={cn("flex items-center", sidebarOpen ? "justify-between" : "justify-center")}>
                             {sidebarOpen && (
                                 <div className="flex items-center space-x-3 overflow-hidden">
                                     <div className="w-9 h-9 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700 shrink-0">
-                                        <User className="w-5 h-5 text-amber-500" />
+                                        <RoleIcon className="w-5 h-5 text-amber-500" />
                                     </div>
                                     <div className="text-sm truncate">
                                         <p className="font-medium text-white truncate max-w-[120px]">
                                             {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Faculty'}
                                         </p>
                                         <div className="flex items-center space-x-1 mt-0.5">
-                                            <Badge className={cn(
-                                                "text-[9px] px-1.5 py-0 font-bold uppercase",
-                                                role === 'Admin' ? "bg-purple-500/20 text-purple-300 border-purple-500/30" :
-                                                role === 'HOD' ? "bg-amber-500/20 text-amber-300 border-amber-500/30" :
-                                                "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                                            )}>
-                                                {role}
+                                            <Badge className={cn("text-[9px] px-1.5 py-0 font-bold uppercase", getRoleAccentColor(role))}>
+                                                {role === 'ExamSection' ? 'Exam Section' : role}
                                             </Badge>
                                         </div>
                                     </div>
@@ -260,25 +342,22 @@ function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
                             >
                                 <Menu className="w-5 h-5" />
                             </button>
-                            <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">{currentPage}</h1>
+                            <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">{getPageTitle()}</h1>
                         </div>
 
                         <div className="flex items-center space-x-2 sm:space-x-3">
-                            {/* Role Switcher (Live Testing for HOD vs Teacher) */}
-                            <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-2 sm:px-2.5 py-1 flex items-center space-x-1.5 sm:space-x-2 text-xs">
-                                <span className="text-slate-500 font-medium hidden sm:flex items-center gap-1">
-                                    <Shield className="w-3.5 h-3.5 text-amber-400" /> Role:
+                            {/* Role Indicator */}
+                            <div className={cn(
+                                "border rounded-xl px-2 sm:px-3 py-1 flex items-center space-x-1.5 text-xs",
+                                role === 'HOD' ? "bg-amber-500/10 border-amber-500/30 text-amber-300" :
+                                role === 'ExamSection' ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" :
+                                role === 'Admin' ? "bg-purple-500/10 border-purple-500/30 text-purple-300" :
+                                "bg-slate-800 border-slate-700 text-slate-300"
+                            )}>
+                                <RoleIcon className="w-3.5 h-3.5" />
+                                <span className="font-semibold hidden sm:inline">
+                                    {role === 'ExamSection' ? 'Exam Section' : role}
                                 </span>
-                                <select
-                                    value={role}
-                                    onChange={(e) => setRoleOverride(e.target.value as UserRole)}
-                                    className="bg-slate-950 border border-slate-700 text-white rounded-lg px-2 py-0.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                    title="Switch active role for testing moderation permissions"
-                                >
-                                    <option value="Teacher">Teacher</option>
-                                    <option value="HOD">HOD</option>
-                                    <option value="Admin">Admin</option>
-                                </select>
                             </div>
 
                             <div className="bg-slate-800/50 rounded-full px-3 sm:px-4 py-1.5 border border-slate-700 flex items-center space-x-2">

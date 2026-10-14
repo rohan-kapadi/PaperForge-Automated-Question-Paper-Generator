@@ -31,7 +31,8 @@ import {
     FileSpreadsheet,
     FileText,
     Check,
-    CloudUpload
+    CloudUpload,
+    GitFork
 } from 'lucide-react';
 import { Blueprint, Question } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -60,6 +61,7 @@ interface PaperSectionQuestion {
     blooms_level?: string;
     co?: string;
     unit?: string;
+    pi?: string;
 }
 
 interface PaperSection {
@@ -201,18 +203,27 @@ function GeneratePaperContent() {
                             attempt_marks: b.attempt_marks || b.total_marks,
                             gross_marks: b.gross_marks || b.total_marks,
                             has_or_choices: b.has_or_choices ?? (b.sections || []).some((s: any) => s.is_or_choice || s.isOrChoice),
-                            sections: (b.sections || []).map((s: any) => ({
-                                id: s.id,
-                                name: s.name,
-                                marksPerQuestion: s.marks_per_question || s.marksPerQuestion || 2,
-                                numberOfQuestions: s.number_of_questions || s.numberOfQuestions || 5,
-                                totalMarks: (s.marks_per_question || s.marksPerQuestion || 2) * (s.number_of_questions || s.numberOfQuestions || 5),
-                                difficulty: s.difficulty,
-                                blooms_levels: s.blooms_levels,
-                                isOrChoice: s.is_or_choice || s.isOrChoice || false,
-                                pairedWithId: s.paired_with_id || s.pairedWithId,
-                                pairLabel: s.pair_label || s.pairLabel,
-                            })),
+                            sections: (b.sections || []).map((s: any) => {
+                                const subMarks = s.sub_question_marks || s.subQuestionMarks || (
+                                    s.marks_per_question && s.number_of_questions
+                                        ? Array(Number(s.number_of_questions)).fill(Number(s.marks_per_question))
+                                        : [5, 5, 5]
+                                );
+                                const secTotal = s.total_marks ?? subMarks.reduce((acc: number, m: any) => acc + Number(m || 0), 0);
+                                return {
+                                    id: s.id,
+                                    name: s.name,
+                                    marksPerQuestion: s.marks_per_question || s.marksPerQuestion || subMarks[0] || 5,
+                                    numberOfQuestions: s.number_of_questions || s.numberOfQuestions || subMarks.length,
+                                    totalMarks: secTotal,
+                                    subQuestionMarks: subMarks,
+                                    difficulty: s.difficulty,
+                                    blooms_levels: s.blooms_levels,
+                                    isOrChoice: s.is_or_choice || s.isOrChoice || false,
+                                    pairedWithId: s.paired_with_id || s.pairedWithId,
+                                    pairLabel: s.pair_label || s.pairLabel,
+                                };
+                            }),
                         }));
                         setBlueprints(formattedBps);
                     } else {
@@ -467,8 +478,26 @@ function GeneratePaperContent() {
             }
 
             const dataA = await resA.json();
+            
+            // Enrich sections with blueprint OR pairing metadata in case backend stripped them
+            const enrichSectionsWithBlueprint = (secs: any[]) => {
+                return (secs || []).map((sec: any, idx: number) => {
+                    const bpSec = selectedBlueprint?.sections?.[idx] as any;
+                    const isOr = sec.is_or_choice ?? sec.isOrChoice ?? bpSec?.is_or_choice ?? bpSec?.isOrChoice ?? false;
+                    return {
+                        ...sec,
+                        isOrChoice: Boolean(isOr),
+                        is_or_choice: Boolean(isOr),
+                        pairedWithId: sec.pairedWithId ?? sec.paired_with_id ?? bpSec?.pairedWithId ?? bpSec?.paired_with_id,
+                        paired_with_id: sec.paired_with_id ?? sec.pairedWithId ?? bpSec?.paired_with_id ?? bpSec?.pairedWithId,
+                        pairLabel: sec.pairLabel ?? sec.pair_label ?? bpSec?.pairLabel ?? bpSec?.pair_label,
+                        pair_label: sec.pair_label ?? sec.pairLabel ?? bpSec?.pair_label ?? bpSec?.pairLabel,
+                    };
+                });
+            };
+
             setGeneratedPaperId(dataA.id);
-            setPaperSections(dataA.sections || []);
+            setPaperSections(enrichSectionsWithBlueprint(dataA.sections || []));
             setGenerationWarnings(dataA.validation?.warnings || []);
 
             // Pass 2: Set B (if dual set generation requested)
@@ -493,7 +522,7 @@ function GeneratePaperContent() {
 
                 const dataB = await resB.json();
                 setGeneratedPaperIdSetB(dataB.id);
-                setPaperSectionsSetB(dataB.sections || []);
+                setPaperSectionsSetB(enrichSectionsWithBlueprint(dataB.sections || []));
                 setPaperSetB(dataB);
                 if (dataB.validation?.warnings?.length > 0) {
                     setGenerationWarnings(prev => [
@@ -648,6 +677,42 @@ function GeneratePaperContent() {
             setPaperSectionsSetB(updateSecs);
         } else {
             setPaperSections(updateSecs);
+        }
+    };
+
+    // Synchronize modifications made in Review & Edit preview (text, marks, CO, PI)
+    const handleQuestionsSync = (updatedItems: any[]) => {
+        const updateTargetSections = (prevSections: PaperSection[]) => {
+            const cloned: PaperSection[] = JSON.parse(JSON.stringify(prevSections));
+            updatedItems.forEach((item: any) => {
+                if (item.type === 'QUESTION' && item.secIdx !== undefined && item.qIdx !== undefined) {
+                    if (cloned[item.secIdx] && cloned[item.secIdx].questions && cloned[item.secIdx].questions[item.qIdx]) {
+                        cloned[item.secIdx].questions[item.qIdx].text = item.text;
+                        if (item.marks_co_btl) {
+                            const parts = item.marks_co_btl.split('/').map((s: string) => s.trim());
+                            if (parts[0] && !isNaN(Number(parts[0]))) {
+                                cloned[item.secIdx].questions[item.qIdx].marks = Number(parts[0]);
+                            }
+                            if (parts[1]) {
+                                cloned[item.secIdx].questions[item.qIdx].co = parts[1];
+                            }
+                            if (parts[2]) {
+                                cloned[item.secIdx].questions[item.qIdx].blooms_level = parts[2];
+                            }
+                        }
+                        if (item.pi) {
+                            cloned[item.secIdx].questions[item.qIdx].pi = item.pi;
+                        }
+                    }
+                }
+            });
+            return cloned;
+        };
+
+        if (activeSetTab === 'B') {
+            setPaperSectionsSetB(prev => updateTargetSections(prev));
+        } else {
+            setPaperSections(prev => updateTargetSections(prev));
         }
     };
 
@@ -1160,54 +1225,133 @@ function GeneratePaperContent() {
                                     </Button>
                                 </div>
 
-                                {newBpSections.map((sec, idx) => (
-                                    <div key={sec.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-slate-950/60 rounded-xl border border-slate-800 items-center">
-                                        <div className="md:col-span-5">
-                                            <Input
-                                                value={sec.name}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    setNewBpSections(prev => prev.map(s => s.id === sec.id ? { ...s, name: val } : s));
-                                                }}
-                                                className="bg-slate-900 border-slate-700 text-white h-9 text-xs"
-                                            />
-                                        </div>
-                                        <div className="md:col-span-3 flex items-center space-x-2">
-                                            <Input
-                                                type="number"
-                                                value={sec.marksPerQuestion}
-                                                onChange={(e) => {
-                                                    const val = Number(e.target.value);
-                                                    setNewBpSections(prev => prev.map(s => s.id === sec.id ? { ...s, marksPerQuestion: val, totalMarks: val * s.numberOfQuestions } : s));
-                                                }}
-                                                className="bg-slate-900 border-slate-700 text-white h-9 text-xs"
-                                                placeholder="Marks/Q"
-                                            />
-                                            <span className="text-xs text-slate-500">m ×</span>
-                                            <Input
-                                                type="number"
-                                                value={sec.numberOfQuestions}
-                                                onChange={(e) => {
-                                                    const val = Number(e.target.value);
-                                                    setNewBpSections(prev => prev.map(s => s.id === sec.id ? { ...s, numberOfQuestions: val, totalMarks: s.marksPerQuestion * val } : s));
-                                                }}
-                                                className="bg-slate-900 border-slate-700 text-white h-9 text-xs"
-                                                placeholder="Count"
-                                            />
-                                        </div>
-                                        <div className="md:col-span-3 text-right">
-                                            <span className="text-xs font-bold text-amber-400">{sec.marksPerQuestion * sec.numberOfQuestions} Marks</span>
-                                        </div>
-                                        <div className="md:col-span-1 text-right">
-                                            <button
-                                                onClick={() => setNewBpSections(prev => prev.filter(s => s.id !== sec.id))}
-                                                className="text-slate-500 hover:text-red-400 p-1"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
+                                 <div className="space-y-1">
+                                     {newBpSections.map((sec: any, idx: number) => {
+                                         const prevSec = idx > 0 ? (newBpSections[idx - 1] as any) : null;
+                                         return (
+                                             <div key={sec.id} className="space-y-1">
+                                                 {/* Inter-question hover OR button */}
+                                                 {idx > 0 && prevSec && (
+                                                     sec.isOrChoice ? (
+                                                         <div className="relative py-1.5 my-0.5 group/activeOr flex items-center justify-center">
+                                                             <div className="absolute inset-0 flex items-center">
+                                                                 <div className="w-full border-t border-dashed border-purple-500/50" />
+                                                             </div>
+                                                             <button
+                                                                 type="button"
+                                                                 onClick={() => {
+                                                                     setNewBpSections((prev: any) => prev.map((s: any, i: number) => 
+                                                                         i === idx ? { ...s, isOrChoice: false, pairedWithId: undefined, pairLabel: undefined } : s
+                                                                     ));
+                                                                 }}
+                                                                 className="relative group/btn flex items-center space-x-1.5 px-3 py-1 rounded-full bg-purple-950 border border-purple-500/60 text-purple-200 shadow-md hover:bg-red-950/80 hover:border-red-500/60 hover:text-red-200 transition-all cursor-pointer font-bold text-[11px]"
+                                                                 title="Click to remove OR choice"
+                                                             >
+                                                                 <GitFork className="w-3 h-3 text-purple-400 group-hover/btn:hidden" />
+                                                                 <span className="group-hover/btn:hidden">
+                                                                     ⚡ {sec.pairLabel || `${prevSec.name} OR ${sec.name}`} (Student Chooses 1)
+                                                                 </span>
+                                                                 <span className="hidden group-hover/btn:inline-flex items-center text-red-300">
+                                                                     <Trash2 className="w-3 h-3 mr-1 text-red-400" />
+                                                                     Remove OR Link
+                                                                 </span>
+                                                             </button>
+                                                         </div>
+                                                     ) : (
+                                                         <div className="relative py-2 my-0.5 group/orGap">
+                                                             <div className="absolute inset-0 flex items-center">
+                                                                 <div className="w-full border-t border-dashed border-slate-800/60 group-hover/orGap:border-purple-500/50 transition-colors" />
+                                                             </div>
+                                                             <div className="relative flex justify-center items-center opacity-0 group-hover/orGap:opacity-100 transition-all duration-200 transform scale-95 group-hover/orGap:scale-100">
+                                                                 <button
+                                                                     type="button"
+                                                                     onClick={() => {
+                                                                         setNewBpSections((prev: any) => prev.map((s: any, i: number) => 
+                                                                             i === idx ? { 
+                                                                                 ...s, 
+                                                                                 isOrChoice: true, 
+                                                                                 pairedWithId: prevSec.id, 
+                                                                                 pairLabel: `${prevSec.name} OR ${s.name}` 
+                                                                             } : s
+                                                                         ));
+                                                                     }}
+                                                                     className="flex items-center space-x-1.5 px-3 py-1 bg-slate-900 hover:bg-purple-600 text-slate-300 hover:text-white border border-slate-700 hover:border-purple-400 rounded-full text-xs font-semibold shadow-lg transition-all cursor-pointer hover:scale-105"
+                                                                     title={`Make OR alternative to ${prevSec.name}`}
+                                                                 >
+                                                                     <GitFork className="w-3 h-3 text-purple-400 group-hover/orGap:text-white" />
+                                                                     <span className="font-bold">OR</span>
+                                                                     <span className="text-[10px] font-normal text-slate-400 group-hover/orGap:text-purple-100">
+                                                                         (Pair with {prevSec.name})
+                                                                     </span>
+                                                                 </button>
+                                                             </div>
+                                                         </div>
+                                                     )
+                                                 )}
+
+                                                 {/* Section Card */}
+                                                 <div className={`grid grid-cols-1 md:grid-cols-12 gap-3 p-3 rounded-xl border items-center transition-all ${
+                                                     sec.isOrChoice 
+                                                         ? 'bg-purple-950/20 border-purple-500/40 ml-3 md:ml-5 border-l-4 border-l-purple-500' 
+                                                         : 'bg-slate-950/60 border-slate-800'
+                                                 }`}>
+                                                     <div className="md:col-span-5 flex items-center space-x-2">
+                                                         {sec.isOrChoice && (
+                                                             <Badge className="bg-purple-500/30 text-purple-200 border-purple-500/50 text-[10px] font-mono shrink-0">
+                                                                 OR
+                                                             </Badge>
+                                                         )}
+                                                         <Input
+                                                             value={sec.name}
+                                                             onChange={(e) => {
+                                                                 const val = e.target.value;
+                                                                 setNewBpSections((prev: any) => prev.map((s: any) => s.id === sec.id ? { ...s, name: val } : s));
+                                                             }}
+                                                             className="bg-slate-900 border-slate-700 text-white h-9 text-xs"
+                                                         />
+                                                     </div>
+                                                     <div className="md:col-span-3 flex items-center space-x-2">
+                                                         <Input
+                                                             type="number"
+                                                             value={sec.marksPerQuestion}
+                                                             onChange={(e) => {
+                                                                 const val = Number(e.target.value);
+                                                                 setNewBpSections((prev: any) => prev.map((s: any) => s.id === sec.id ? { ...s, marksPerQuestion: val, totalMarks: val * s.numberOfQuestions } : s));
+                                                             }}
+                                                             className="bg-slate-900 border-slate-700 text-white h-9 text-xs"
+                                                             placeholder="Marks/Q"
+                                                         />
+                                                         <span className="text-xs text-slate-500">m ×</span>
+                                                         <Input
+                                                             type="number"
+                                                             value={sec.numberOfQuestions}
+                                                             onChange={(e) => {
+                                                                 const val = Number(e.target.value);
+                                                                 setNewBpSections((prev: any) => prev.map((s: any) => s.id === sec.id ? { ...s, numberOfQuestions: val, totalMarks: s.marksPerQuestion * val } : s));
+                                                             }}
+                                                             className="bg-slate-900 border-slate-700 text-white h-9 text-xs"
+                                                             placeholder="Count"
+                                                         />
+                                                     </div>
+                                                     <div className="md:col-span-3 text-right">
+                                                         <span className="text-xs font-bold text-amber-400">
+                                                             {sec.marksPerQuestion * sec.numberOfQuestions} Marks
+                                                             {sec.isOrChoice && <span className="text-[10px] text-purple-400 font-normal ml-1">(Choice Opt)</span>}
+                                                         </span>
+                                                     </div>
+                                                     <div className="md:col-span-1 text-right">
+                                                         <button
+                                                             onClick={() => setNewBpSections((prev: any) => prev.filter((s: any) => s.id !== sec.id))}
+                                                             className="text-slate-500 hover:text-red-400 p-1"
+                                                         >
+                                                             <Trash2 className="w-4 h-4" />
+                                                         </button>
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                         );
+                                     })}
+                                 </div>
                             </div>
 
                             <Button
@@ -1867,7 +2011,9 @@ function GeneratePaperContent() {
                             paper={{
                                 sections: activeSections,
                                 title: `${subjectName}${generateBothSets ? ` (${activeSetTab === 'B' ? 'Set B' : 'Set A'})` : ''}`,
-                                exam_type: examName
+                                exam_type: examName,
+                                has_or_choices: Boolean(selectedBlueprint?.has_or_choices ?? activeSections.some((s: any) => s.isOrChoice || s.is_or_choice)),
+                                use_or_pairing: Boolean(selectedBlueprint?.has_or_choices ?? activeSections.some((s: any) => s.isOrChoice || s.is_or_choice)),
                             }}
                             academicYear={academicYear}
                             term={term}
@@ -1886,6 +2032,7 @@ function GeneratePaperContent() {
                             onReplaceQuestion={handleOpenReplaceModal}
                             onEditQuestion={(secIdx, qIdx, q) => setEditingQuestion({ sectionIndex: secIdx, questionIndex: qIdx, text: q.text, marks: q.marks })}
                             onRemoveQuestion={handleRemoveQuestion}
+                            onQuestionsChange={handleQuestionsSync}
                         />
                     </div>
 

@@ -27,6 +27,7 @@ export interface BlueprintSection {
     marksPerQuestion: number;
     numberOfQuestions: number;
     totalMarks: number;
+    subQuestionMarks?: number[];
     isOrChoice?: boolean;
     pairedWithId?: string;
     pairLabel?: string;
