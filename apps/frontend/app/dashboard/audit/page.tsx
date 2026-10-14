@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Activity, FileText, Settings, ShieldCheck, RefreshCw, AlertCircle, Upload, Brain, Loader2 } from 'lucide-react';
+import { Activity, FileText, Settings, ShieldCheck, RefreshCw, AlertCircle, Upload, Brain, Loader2, Shield } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -54,6 +56,7 @@ function getActionStyle(actionCode: string): { Icon: React.ElementType; color: s
 // ──────────────────────────────────────────────────────────────────────────────
 
 export default function AuditLogsPage() {
+    const { role, isHODOrAdmin } = useAuth();
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -65,7 +68,7 @@ export default function AuditLogsPage() {
         setError(null);
 
         try {
-            const res = await fetch('http://localhost:3001/audit-logs?limit=100');
+            const res = await apiFetch('/audit-logs?limit=100');
             if (!res.ok) throw new Error(`Server returned ${res.status}`);
             const data = await res.json();
             setLogs(Array.isArray(data) ? data : []);
@@ -84,6 +87,28 @@ export default function AuditLogsPage() {
     // ── Render states ──────────────────────────────────────────────────────────
 
     const renderContent = () => {
+        if (!isHODOrAdmin) {
+            return (
+                <div className="flex flex-col items-center justify-center py-24 text-center max-w-md mx-auto space-y-4">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto shadow-lg shadow-amber-500/10">
+                        <ShieldCheck className="w-7 h-7" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-1">Access Restricted</h3>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                            Audit logs and system activity trails are confidential and accessible to Department Heads (HOD) and Administrators only.
+                        </p>
+                    </div>
+                    <div className="pt-2 flex items-center gap-2">
+                        <span className="text-xs text-slate-500">Active Role:</span>
+                        <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-xs">
+                            {role}
+                        </Badge>
+                    </div>
+                </div>
+            );
+        }
+
         if (loading) {
             return (
                 <div className="flex flex-col items-center justify-center py-24 text-slate-400 gap-3">

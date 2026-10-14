@@ -11,8 +11,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { Blueprint } from '@/lib/types';
-
-const BACKEND_URL = 'http://localhost:3001';
+import { apiFetch } from '@/lib/api';
 
 export default function ManualSelectionPage() {
     const { selectedQuestions, addQuestion, removeQuestion, clearSelection, totalMarks, isSelected } = useSelectionStore();
@@ -29,9 +28,9 @@ export default function ManualSelectionPage() {
         const fetchAll = async () => {
             try {
                 const [resQ, resB, resBP] = await Promise.all([
-                    fetch(`${BACKEND_URL}/questions`),
-                    fetch(`${BACKEND_URL}/questions/banks`),
-                    fetch(`${BACKEND_URL}/blueprints`)
+                    apiFetch('/questions'),
+                    apiFetch('/questions/banks'),
+                    apiFetch('/blueprints')
                 ]);
                 if (resQ.ok) setQuestions(await resQ.json());
                 if (resB.ok) setBanks(await resB.json());
@@ -203,7 +202,7 @@ export default function ManualSelectionPage() {
                                                     e.stopPropagation();
                                                     if (confirm(`Are you sure you want to delete ${bank.name}? This will delete all associated questions.`)) {
                                                         try {
-                                                            await fetch(`${BACKEND_URL}/questions/banks/${bank.id}`, { method: 'DELETE' });
+                                                            await apiFetch(`/questions/banks/${bank.id}`, { method: 'DELETE' });
                                                             setBanks(prev => prev.filter(b => b.id !== bank.id));
                                                             setSelectedBankIds(prev => prev.filter(id => id !== bank.id));
                                                         } catch (err) {

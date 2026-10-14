@@ -14,4 +14,14 @@ export class AppController {
   getStats() {
     return this.appService.getStats();
   }
+
+  @Get('health')
+  getHealth() {
+    return {
+      status: 'ok',
+      service: 'backend-api',
+      uptime: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

@@ -36,8 +36,8 @@ import {
 import { Blueprint, Question } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import CollegeQuestionPaper from '@/components/CollegeQuestionPaper';
+import { apiFetch } from '@/lib/api';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (id?: string) => !!id && UUID_REGEX.test(id);
 
@@ -58,6 +58,8 @@ interface PaperSectionQuestion {
     difficulty?: string;
     topic?: string;
     blooms_level?: string;
+    co?: string;
+    unit?: string;
 }
 
 interface PaperSection {
@@ -131,6 +133,13 @@ function GeneratePaperContent() {
     const [paperSections, setPaperSections] = useState<PaperSection[]>([]);
     const [allAvailableQuestions, setAllAvailableQuestions] = useState<Question[]>([]);
 
+    // Multi-Set Paper Generation (Phase 6.4)
+    const [generateBothSets, setGenerateBothSets] = useState(false);
+    const [activeSetTab, setActiveSetTab] = useState<'A' | 'B'>('A');
+    const [paperSetB, setPaperSetB] = useState<any | null>(null);
+    const [paperSectionsSetB, setPaperSectionsSetB] = useState<PaperSection[]>([]);
+    const [generatedPaperIdSetB, setGeneratedPaperIdSetB] = useState<string | null>(null);
+
     // Replacement Modal in Step 5
     const [replaceModal, setReplaceModal] = useState<{
         isOpen: boolean;
@@ -161,9 +170,9 @@ function GeneratePaperContent() {
         const fetchInitialData = async () => {
             try {
                 const [resBanks, resQuestions, resBlueprints] = await Promise.all([
-                    fetch(`${BACKEND_URL}/questions/banks`).catch(() => null),
-                    fetch(`${BACKEND_URL}/questions`).catch(() => null),
-                    fetch(`${BACKEND_URL}/blueprints`).catch(() => null),
+                    apiFetch('/questions/banks').catch(() => null),
+                    apiFetch('/questions').catch(() => null),
+                    apiFetch('/blueprints').catch(() => null),
                 ]);
 
                 if (resBanks && resBanks.ok) {
@@ -283,7 +292,7 @@ function GeneratePaperContent() {
             const form = new FormData();
             form.append('file', file);
 
-            const res = await fetch(`${BACKEND_URL}/questions/upload`, {
+            const res = await apiFetch('/questions/upload', {
                 method: 'POST',
                 body: form
             });
@@ -385,77 +394,121 @@ function GeneratePaperContent() {
         }, 800);
 
         try {
-            const payload: any = {
-                title: `${subjectName} - ${examName}`,
-                exam_type: examName,
-                difficulty_preset: difficulty,
-                selected_units: selectedUnits,
-                selected_blooms: selectedBlooms,
-                // PCCOER Autonomous College Metadata
-                academic_year: academicYear,
-                term: term,
-                record_no: recordNo,
-                department: department,
-                student_class: studentClass,
-                div: division,
-                subject_name: subjectName,
-                subject_code: subjectCode,
-                exam_date: examDate,
-                duration: `${duration} Min`,
-                course_outcomes: courseOutcomes,
-                use_or_pairing: useOrPairing,
-                sub_questions_per_group: 3,
-                marks_per_sub_question: 5,
+            // Helper to build generation payload
+            const buildPayload = (setName: string, avoidIds: string[] = []) => {
+                const payload: any = {
+                    title: `${subjectName} - ${examName}${setName === 'Set B' ? ' (Set B)' : ''}`,
+                    exam_type: examName,
+                    set_name: setName,
+                    difficulty_preset: difficulty,
+                    selected_units: selectedUnits,
+                    selected_blooms: selectedBlooms,
+                    avoid_question_ids: avoidIds,
+                    academic_year: academicYear,
+                    term: term,
+                    record_no: recordNo,
+                    department: department,
+                    student_class: studentClass,
+                    div: division,
+                    subject_name: subjectName,
+                    subject_code: subjectCode,
+                    exam_date: examDate,
+                    duration: `${duration} Min`,
+                    course_outcomes: courseOutcomes,
+                    use_or_pairing: useOrPairing,
+                    sub_questions_per_group: 3,
+                    marks_per_sub_question: 5,
+                };
+
+                if (selectedBlueprint) {
+                    if (isUuid(selectedBlueprint.id)) {
+                        payload.blueprint_id = selectedBlueprint.id;
+                    } else {
+                        payload.blueprint = {
+                            id: selectedBlueprint.id,
+                            title: selectedBlueprint.name,
+                            has_or_choices: selectedBlueprint.has_or_choices,
+                            attempt_marks: selectedBlueprint.attempt_marks,
+                            gross_marks: selectedBlueprint.gross_marks,
+                            sections: selectedBlueprint.sections.map((s: any) => ({
+                                id: s.id,
+                                name: s.name,
+                                marks_per_question: s.marksPerQuestion,
+                                number_of_questions: s.numberOfQuestions,
+                                total_marks: s.totalMarks,
+                                is_or_choice: s.isOrChoice,
+                                paired_with_id: s.pairedWithId,
+                                pair_label: s.pairLabel,
+                            }))
+                        };
+                    }
+                }
+
+                if (selectedBank && isUuid(selectedBank.id)) {
+                    payload.bank_id = selectedBank.id;
+                }
+
+                return payload;
             };
 
-            if (selectedBlueprint) {
-                if (isUuid(selectedBlueprint.id)) {
-                    payload.blueprint_id = selectedBlueprint.id;
-                } else {
-                    payload.blueprint = {
-                        id: selectedBlueprint.id,
-                        title: selectedBlueprint.name,
-                        has_or_choices: selectedBlueprint.has_or_choices,
-                        attempt_marks: selectedBlueprint.attempt_marks,
-                        gross_marks: selectedBlueprint.gross_marks,
-                        sections: selectedBlueprint.sections.map((s: any) => ({
-                            id: s.id,
-                            name: s.name,
-                            marks_per_question: s.marksPerQuestion,
-                            number_of_questions: s.numberOfQuestions,
-                            total_marks: s.totalMarks,
-                            is_or_choice: s.isOrChoice,
-                            paired_with_id: s.pairedWithId,
-                            pair_label: s.pairLabel,
-                        }))
-                    };
+            setGenerationProgress(30);
+            setGenerationStatusText(generateBothSets ? 'Generating Set A examination questions...' : 'Generating paper questions...');
+
+            // Pass 1: Set A
+            const payloadA = buildPayload('Set A');
+            const resA = await apiFetch('/papers/generate', {
+                method: 'POST',
+                body: JSON.stringify(payloadA),
+            });
+
+            if (!resA.ok) {
+                const errData = await resA.json().catch(() => ({}));
+                throw new Error(errData.message || `Set A generation failed (${resA.status} ${resA.statusText})`);
+            }
+
+            const dataA = await resA.json();
+            setGeneratedPaperId(dataA.id);
+            setPaperSections(dataA.sections || []);
+            setGenerationWarnings(dataA.validation?.warnings || []);
+
+            // Pass 2: Set B (if dual set generation requested)
+            if (generateBothSets) {
+                setGenerationProgress(70);
+                setGenerationStatusText('Generating Set B questions with zero overlap...');
+
+                const setAQuestionIds = (dataA.sections || [])
+                    .flatMap((s: any) => (s.questions || []).map((q: any) => q.id))
+                    .filter(Boolean);
+
+                const payloadB = buildPayload('Set B', setAQuestionIds);
+                const resB = await apiFetch('/papers/generate', {
+                    method: 'POST',
+                    body: JSON.stringify(payloadB),
+                });
+
+                if (!resB.ok) {
+                    const errData = await resB.json().catch(() => ({}));
+                    throw new Error(errData.message || `Set B generation failed (${resB.status} ${resB.statusText})`);
+                }
+
+                const dataB = await resB.json();
+                setGeneratedPaperIdSetB(dataB.id);
+                setPaperSectionsSetB(dataB.sections || []);
+                setPaperSetB(dataB);
+                if (dataB.validation?.warnings?.length > 0) {
+                    setGenerationWarnings(prev => [
+                        ...prev,
+                        ...dataB.validation.warnings.map((w: string) => `[Set B] ${w}`)
+                    ]);
                 }
             }
 
-            if (selectedBank && isUuid(selectedBank.id)) {
-                payload.bank_id = selectedBank.id;
-            }
-
-            const res = await fetch(`${BACKEND_URL}/papers/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                setGeneratedPaperId(data.id);
-                setPaperSections(data.sections || []);
-                setGenerationWarnings(data.validation?.warnings || []);
-                setGenerationProgress(100);
-                setGenerationStatusText('Paper generation complete!');
-                setIsGenerating(false);
-                setStep(5);
-                return;
-            } else {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.message || `Generation failed (${res.status} ${res.statusText})`);
-            }
+            setGenerationProgress(100);
+            setGenerationStatusText(generateBothSets ? 'Both Set A & Set B generated successfully!' : 'Paper generation complete!');
+            setIsGenerating(false);
+            setActiveSetTab('A');
+            setStep(5);
+            return;
         } catch (apiErr: any) {
             console.error('Paper generation failed:', apiErr);
             setIsGenerating(false);
@@ -464,14 +517,20 @@ function GeneratePaperContent() {
         }
     };
 
-    // Calculate current total marks in generated paper
-    const currentTotalMarks = paperSections.reduce((acc, sec) => {
+    // Active paper sections based on currently reviewed set
+    const activeSections = activeSetTab === 'B' ? paperSectionsSetB : paperSections;
+    const currentActivePaperId = activeSetTab === 'B' ? generatedPaperIdSetB : generatedPaperId;
+
+    // Calculate current total marks in active paper set
+    const currentTotalMarks = activeSections.reduce((acc, sec) => {
         return acc + sec.questions.reduce((sAcc, q) => sAcc + (Number(q.marks) || 0), 0);
     }, 0);
 
-    // Contextual Actions in Step 5: Replace Question
-    const handleOpenReplaceModal = (sectionIndex: number, questionIndex: number) => {
-        const currentQ = paperSections[sectionIndex]?.questions[questionIndex] || null;
+    // Contextual Actions in Step 5: Replace Question (Step 6.3 - Load real candidates)
+    const handleOpenReplaceModal = async (sectionIndex: number, questionIndex: number) => {
+        const currentQ = activeSections[sectionIndex]?.questions[questionIndex] || null;
+        const currentMark = activeSections[sectionIndex]?.marksPerQuestion || currentQ?.marks || 5;
+
         setReplaceModal({
             isOpen: true,
             sectionIndex,
@@ -480,49 +539,124 @@ function GeneratePaperContent() {
         });
         setReplaceSearch('');
         setReplaceDiffFilter('all');
+        setIsLoadingCandidates(true);
+
+        try {
+            const currentIds = activeSections.flatMap((s: any) => (s.questions || []).map((q: any) => q.id)).filter(Boolean);
+            const queryParams = new URLSearchParams();
+            if (selectedBank?.id) queryParams.set('bankId', selectedBank.id);
+            if (currentMark) queryParams.set('marks', String(currentMark));
+            if (currentIds.length > 0) queryParams.set('excludeIds', currentIds.join(','));
+
+            const res = await apiFetch(`/papers/candidates?${queryParams.toString()}`);
+            if (res.ok) {
+                const data = await res.json();
+                setCandidateQuestions(Array.isArray(data) ? data : []);
+            } else {
+                const fallback = allAvailableQuestions.filter(q => q.marks === currentMark && !currentIds.includes(q.id));
+                setCandidateQuestions(fallback);
+            }
+        } catch (err) {
+            console.error('Failed to load candidate questions:', err);
+            const currentIds = activeSections.flatMap((s: any) => (s.questions || []).map((q: any) => q.id)).filter(Boolean);
+            setCandidateQuestions(allAvailableQuestions.filter(q => q.marks === currentMark && !currentIds.includes(q.id)));
+        } finally {
+            setIsLoadingCandidates(false);
+        }
     };
 
-    const handleConfirmReplacement = (replacement: Question) => {
-        if (replaceModal.sectionIndex === -1 || replaceModal.questionIndex === -1) return;
+    // Step 6.2: Question replacement wired to backend
+    const handleConfirmReplacement = async (
+        replacement: Question | any,
+        explicitSecIdx?: number,
+        explicitQIdx?: number
+    ) => {
+        const secIdx = explicitSecIdx !== undefined ? explicitSecIdx : replaceModal.sectionIndex;
+        const qIdx = explicitQIdx !== undefined ? explicitQIdx : replaceModal.questionIndex;
+        if (secIdx === -1 || qIdx === -1) return;
 
-        setPaperSections(prev => {
+        const isSetB = activeSetTab === 'B';
+        const targetPaperId = isSetB ? generatedPaperIdSetB : generatedPaperId;
+
+        const updateSecs = (prev: PaperSection[]) => {
             const next = [...prev];
-            const sec = { ...next[replaceModal.sectionIndex] };
+            const sec = { ...next[secIdx] };
             const qList = [...sec.questions];
 
-            qList[replaceModal.questionIndex] = {
+            qList[qIdx] = {
                 id: replacement.id,
                 text: replacement.text,
-                marks: sec.marksPerQuestion,
-                difficulty: replacement.difficulty,
-                topic: replacement.unit || replacement.topic,
-                blooms_level: 'Apply'
+                marks: sec.marksPerQuestion || replacement.marks || 5,
+                difficulty: replacement.difficulty || 'Medium',
+                topic: replacement.unit || replacement.topic || 'General',
+                blooms_level: replacement.blooms_level || 'Apply',
+                co: replacement.co || 'CO1',
             };
 
             sec.questions = qList;
-            next[replaceModal.sectionIndex] = sec;
+            next[secIdx] = sec;
             return next;
-        });
+        };
+
+        if (isSetB) {
+            setPaperSectionsSetB(updateSecs);
+        } else {
+            setPaperSections(updateSecs);
+        }
 
         setReplaceModal({ isOpen: false, sectionIndex: -1, questionIndex: -1, currentQuestion: null });
+
+        // Step 6.2 — Sync replacement to backend DB
+        if (targetPaperId) {
+            try {
+                const res = await apiFetch(`/papers/${targetPaperId}/replace-question`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        section_index: secIdx,
+                        question_index: qIdx,
+                        new_question_id: replacement.id,
+                        bank_id: selectedBank?.id,
+                    }),
+                });
+                if (res.ok) {
+                    const updatedPaper = await res.json();
+                    if (updatedPaper && updatedPaper.sections) {
+                        if (isSetB) {
+                            setPaperSectionsSetB(updatedPaper.sections);
+                            setPaperSetB(updatedPaper);
+                        } else {
+                            setPaperSections(updatedPaper.sections);
+                        }
+                    }
+                }
+            } catch (syncErr) {
+                console.error('Failed to sync replacement to backend:', syncErr);
+            }
+        }
     };
 
     // Remove Question
     const handleRemoveQuestion = (sectionIndex: number, questionIndex: number) => {
-        setPaperSections(prev => {
+        const updateSecs = (prev: PaperSection[]) => {
             const next = [...prev];
             const sec = { ...next[sectionIndex] };
             sec.questions = sec.questions.filter((_, idx) => idx !== questionIndex);
             next[sectionIndex] = sec;
             return next;
-        });
+        };
+        if (activeSetTab === 'B') {
+            setPaperSectionsSetB(updateSecs);
+        } else {
+            setPaperSections(updateSecs);
+        }
     };
 
     // Regenerate individual question
     const handleRegenerateQuestion = (sectionIndex: number, questionIndex: number) => {
-        const sec = paperSections[sectionIndex];
+        const sec = activeSections[sectionIndex];
+        if (!sec) return;
         const candidates = allAvailableQuestions.filter(q =>
-            !sec.questions.some(sq => sq.text === q.text) &&
+            !sec.questions.some(sq => sq.text === q.text || sq.id === q.id) &&
             (q.marks === sec.marksPerQuestion || Math.abs(q.marks - sec.marksPerQuestion) <= 2)
         );
         if (candidates.length === 0) {
@@ -530,35 +664,19 @@ function GeneratePaperContent() {
             return;
         }
         const randomChoice = candidates[Math.floor(Math.random() * candidates.length)];
-
-        setPaperSections(prev => {
-            const next = [...prev];
-            const targetSec = { ...next[sectionIndex] };
-            const qList = [...targetSec.questions];
-            qList[questionIndex] = {
-                id: randomChoice.id,
-                text: randomChoice.text,
-                marks: targetSec.marksPerQuestion,
-                difficulty: randomChoice.difficulty,
-                topic: randomChoice.unit,
-                blooms_level: 'Analyze'
-            };
-            targetSec.questions = qList;
-            next[sectionIndex] = targetSec;
-            return next;
-        });
+        handleConfirmReplacement(randomChoice, sectionIndex, questionIndex);
     };
 
     // Auto-fix blueprint mismatches
     const handleAutoFixValidation = () => {
-        setPaperSections(prev => {
+        const updateSecs = (prev: PaperSection[]) => {
             return prev.map((sec, secIdx) => {
                 const diff = sec.targetCount - sec.questions.length;
                 if (diff <= 0) return sec;
 
                 const newQs: PaperSectionQuestion[] = [...sec.questions];
                 const pool = allAvailableQuestions.filter(q =>
-                    !newQs.some(sq => sq.text === q.text) &&
+                    !newQs.some(sq => sq.text === q.text || sq.id === q.id) &&
                     (q.marks === sec.marksPerQuestion || Math.abs(q.marks - sec.marksPerQuestion) <= 2)
                 );
 
@@ -575,38 +693,36 @@ function GeneratePaperContent() {
                 }
                 return { ...sec, questions: newQs };
             });
-        });
+        };
+        if (activeSetTab === 'B') {
+            setPaperSectionsSetB(updateSecs);
+        } else {
+            setPaperSections(updateSecs);
+        }
     };
 
     // Save Paper
     const handleSavePaper = async () => {
-        if (generatedPaperId) {
-            try {
-                await fetch(`${BACKEND_URL}/papers/${generatedPaperId}/status`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'Approved' }),
-                });
-            } catch (err) {
-                console.error('Update status error:', err);
-            }
-        }
-
         setIsSaved(true);
         setStep(6);
     };
 
-    const handleExportDocx = async () => {
+    const handleExportDocx = async (targetSet: 'A' | 'B' = activeSetTab) => {
+        const isSetB = targetSet === 'B';
+        const sectionsToExport = isSetB ? paperSectionsSetB : paperSections;
+        const setNameStr = isSetB ? 'Set B' : 'Set A';
+
         try {
             const payload = {
                 department,
-                subject: subjectName,
+                subject: `${subjectName}${generateBothSets ? ` (${setNameStr})` : ''}`,
                 subject_code: subjectCode,
                 class: studentClass,
                 div: division,
                 academic_year: academicYear,
                 term,
                 exam_type: examName,
+                set_name: setNameStr,
                 max_marks: targetBlueprintMarks,
                 duration: `${duration} Min`,
                 date: examDate,
@@ -614,12 +730,11 @@ function GeneratePaperContent() {
                 rev: '00',
                 rev_date: '01-09-2025',
                 co_list: courseOutcomes,
-                sections: paperSections,
+                sections: sectionsToExport,
             };
 
-            const res = await fetch(`${BACKEND_URL}/papers/export/docx`, {
+            const res = await apiFetch('/papers/export/docx', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
             if (!res.ok) throw new Error('Export failed');
@@ -627,7 +742,7 @@ function GeneratePaperContent() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${subjectName.replace(/\s+/g, '_')}_PCCOER_${examName.replace(/\s+/g, '_')}.docx`;
+            a.download = `${subjectName.replace(/\s+/g, '_')}_${setNameStr.replace(/\s+/g, '_')}_PCCOER_${examName.replace(/\s+/g, '_')}.docx`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -651,8 +766,8 @@ function GeneratePaperContent() {
     return (
         <div className="space-y-8 max-w-6xl mx-auto pb-16">
             {/* Wizard Stepper Header */}
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 backdrop-blur-md shadow-xl">
-                <div className="flex items-center justify-between overflow-x-auto py-1">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 sm:p-4 backdrop-blur-md shadow-xl overflow-hidden">
+                <div className="flex items-center justify-between overflow-x-auto py-1 scrollbar-none scroll-smooth">
                     {steps.map((s, idx) => {
                         const isCompleted = step > s.num;
                         const isCurrent = step === s.num;
@@ -1307,6 +1422,36 @@ function GeneratePaperContent() {
                                         </Badge>
                                     </div>
 
+                                    {/* Multi-Set Generation Toggle (Set A + Set B) */}
+                                    <div className="p-3.5 rounded-xl bg-slate-950/80 border border-blue-500/30 flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <div className="flex items-center space-x-2">
+                                                <span className="text-xs font-bold text-blue-300">
+                                                    Multi-Set Generation (Set A + Set B)
+                                                </span>
+                                                <Badge className="bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px]">
+                                                    Zero-Overlap
+                                                </Badge>
+                                            </div>
+                                            <p className="text-[11px] text-slate-400">
+                                                Generate dual uncorrelated examination sets (Set A and Set B) with zero overlapping questions.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setGenerateBothSets(!generateBothSets)}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                                                generateBothSets ? 'bg-blue-500' : 'bg-slate-700'
+                                            }`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                                    generateBothSets ? 'translate-x-6' : 'translate-x-1'
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+
                                     {/* OR-Choice Pairing Toggle */}
                                     <div className="p-3.5 rounded-xl bg-slate-950/80 border border-amber-500/30 flex items-center justify-between">
                                         <div className="space-y-0.5">
@@ -1545,7 +1690,7 @@ function GeneratePaperContent() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div>
                                 <span className="text-[11px] text-slate-500 uppercase font-semibold">Subject & Exam</span>
                                 <p className="text-sm text-slate-200 mt-0.5">{subjectName} • {examName}</p>
@@ -1557,6 +1702,16 @@ function GeneratePaperContent() {
                             <div>
                                 <span className="text-[11px] text-slate-500 uppercase font-semibold">Syllabus Covered</span>
                                 <p className="text-sm text-slate-200 mt-0.5">{selectedUnits.join(', ')}</p>
+                            </div>
+                            <div>
+                                <span className="text-[11px] text-slate-500 uppercase font-semibold">Sets Configuration</span>
+                                <p className="text-sm font-semibold mt-0.5">
+                                    {generateBothSets ? (
+                                        <span className="text-blue-400">Dual Sets (A + B)</span>
+                                    ) : (
+                                        <span className="text-slate-300">Single Set (Set A)</span>
+                                    )}
+                                </p>
                             </div>
                         </div>
                     </Card>
@@ -1612,7 +1767,14 @@ function GeneratePaperContent() {
                     {/* Header with Quick Actions */}
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <div>
-                            <h2 className="text-3xl font-bold text-white mb-1">Review & Edit Paper</h2>
+                            <div className="flex items-center space-x-3">
+                                <h2 className="text-3xl font-bold text-white mb-1">Review & Edit Paper</h2>
+                                {generateBothSets && (
+                                    <Badge className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs py-1">
+                                        Dual Sets Mode
+                                    </Badge>
+                                )}
+                            </div>
                             <p className="text-slate-400">Contextually edit, replace, or reorder questions. Validated against blueprint rules.</p>
                         </div>
                         <div className="flex items-center space-x-3">
@@ -1625,6 +1787,42 @@ function GeneratePaperContent() {
                         </div>
                     </div>
 
+                    {/* Multi-Set Tab Switcher (Step 6.4: Set A | Set B) */}
+                    {generateBothSets && (
+                        <div className="flex items-center space-x-3 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800 w-fit shadow-md">
+                            <button
+                                type="button"
+                                onClick={() => setActiveSetTab('A')}
+                                className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2.5 ${
+                                    activeSetTab === 'A'
+                                        ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25 scale-[1.02]'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                                }`}
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>Examination Set A</span>
+                                <Badge className={`text-[10px] ${activeSetTab === 'A' ? 'bg-slate-950/20 text-slate-900 border-none' : 'bg-slate-800 text-slate-300'}`}>
+                                    {paperSections.reduce((acc, s) => acc + s.questions.length, 0)} Questions
+                                </Badge>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setActiveSetTab('B')}
+                                className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2.5 ${
+                                    activeSetTab === 'B'
+                                        ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25 scale-[1.02]'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                                }`}
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>Examination Set B (Zero Overlap)</span>
+                                <Badge className={`text-[10px] ${activeSetTab === 'B' ? 'bg-white/20 text-white border-none' : 'bg-slate-800 text-slate-300'}`}>
+                                    {paperSectionsSetB.reduce((acc, s) => acc + s.questions.length, 0)} Questions
+                                </Badge>
+                            </button>
+                        </div>
+                    )}
+
                     {/* Blueprint Compliance & Quality Validation Bar */}
                     <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <div className="flex items-center space-x-3">
@@ -1636,7 +1834,9 @@ function GeneratePaperContent() {
                                 {currentTotalMarks === targetBlueprintMarks ? <Check className="w-5 h-5" /> : '!'}
                             </div>
                             <div>
-                                <span className="text-xs text-slate-400 uppercase font-semibold">Total Marks Validation</span>
+                                <span className="text-xs text-slate-400 uppercase font-semibold">
+                                    {generateBothSets ? `Set ${activeSetTab} Marks Validation` : 'Total Marks Validation'}
+                                </span>
                                 <p className="text-sm font-bold text-white">
                                     {currentTotalMarks} / {targetBlueprintMarks} Marks
                                     {currentTotalMarks === targetBlueprintMarks ? (
@@ -1664,10 +1864,14 @@ function GeneratePaperContent() {
                     {/* Official PCCOER College Paper Layout Canvas */}
                     <div className="rounded-2xl p-2 md:p-4 shadow-2xl backdrop-blur-sm bg-slate-900/40 border border-slate-800">
                         <CollegeQuestionPaper
-                            paper={{ sections: paperSections, title: subjectName, exam_type: examName }}
+                            paper={{
+                                sections: activeSections,
+                                title: `${subjectName}${generateBothSets ? ` (${activeSetTab === 'B' ? 'Set B' : 'Set A'})` : ''}`,
+                                exam_type: examName
+                            }}
                             academicYear={academicYear}
                             term={term}
-                            examType={examName}
+                            examType={`${examName}${generateBothSets ? ` (${activeSetTab === 'B' ? 'Set B' : 'Set A'})` : ''}`}
                             department={department}
                             subjectName={subjectName}
                             subjectCode={subjectCode}
@@ -1685,7 +1889,7 @@ function GeneratePaperContent() {
                         />
                     </div>
 
-                    {/* Replacement Modal */}
+                    {/* Replacement Modal (Step 6.3 - Real Candidates with Targeted Marks) */}
                     <AnimatePresence>
                         {replaceModal.isOpen && (
                             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -1697,8 +1901,17 @@ function GeneratePaperContent() {
                                 >
                                     <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                                         <div>
-                                            <h3 className="text-lg font-bold text-white">Choose Replacement Question</h3>
-                                            <p className="text-xs text-slate-400">Select an alternate question to swap into this slot.</p>
+                                            <div className="flex items-center space-x-2">
+                                                <h3 className="text-lg font-bold text-white">Choose Replacement Question</h3>
+                                                {generateBothSets && (
+                                                    <Badge className="bg-slate-800 text-slate-300 text-[10px]">
+                                                        Set {activeSetTab}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-slate-400">
+                                                Select an alternative question matching this section&apos;s mark constraint.
+                                            </p>
                                         </div>
                                         <button
                                             onClick={() => setReplaceModal({ isOpen: false, sectionIndex: -1, questionIndex: -1, currentQuestion: null })}
@@ -1708,12 +1921,12 @@ function GeneratePaperContent() {
                                         </button>
                                     </div>
 
-                                    {/* Search in Modal */}
+                                    {/* Search & Difficulty Filter in Modal */}
                                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                                         <div className="md:col-span-8 relative">
                                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
                                             <Input
-                                                placeholder="Search replacement questions..."
+                                                placeholder="Search replacement questions by keyword, unit, or topic..."
                                                 value={replaceSearch}
                                                 onChange={(e) => setReplaceSearch(e.target.value)}
                                                 className="pl-10 bg-slate-950 border-slate-800 text-white h-9 text-xs"
@@ -1733,34 +1946,70 @@ function GeneratePaperContent() {
                                         </div>
                                     </div>
 
-                                    {/* Questions List */}
+                                    {/* Questions List (Real Candidates from Backend API with Loading Spinner) */}
                                     <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                                        {allAvailableQuestions
-                                            .filter(q => {
-                                                const matchesSearch = (q.text || '').toLowerCase().includes(replaceSearch.toLowerCase()) ||
-                                                    (q.topic || '').toLowerCase().includes(replaceSearch.toLowerCase());
-                                                const matchesDiff = replaceDiffFilter === 'all' || q.difficulty === replaceDiffFilter;
-                                                return matchesSearch && matchesDiff;
-                                            })
-                                            .map((cand) => (
-                                                <div
-                                                    key={cand.id}
-                                                    onClick={() => handleConfirmReplacement(cand)}
-                                                    className="p-3 bg-slate-950/60 border border-slate-800 hover:border-amber-500 rounded-xl cursor-pointer transition-all flex justify-between items-start gap-3 group"
-                                                >
-                                                    <div className="flex-1 text-xs text-slate-200 group-hover:text-white">
-                                                        <p className="line-clamp-2">{cand.text}</p>
-                                                        <div className="flex space-x-2 mt-1.5 text-[10px] text-slate-500">
-                                                            <span>{cand.unit || 'Unit 1'}</span>
-                                                            <span>•</span>
-                                                            <span className="text-amber-400">{cand.difficulty}</span>
+                                        {isLoadingCandidates ? (
+                                            <div className="py-12 flex flex-col items-center justify-center text-slate-400 space-y-3">
+                                                <RefreshCw className="w-6 h-6 animate-spin text-amber-400" />
+                                                <p className="text-xs">Fetching targeted replacement candidates from question bank...</p>
+                                            </div>
+                                        ) : (
+                                            (() => {
+                                                const candidatesPool = candidateQuestions.length > 0 ? candidateQuestions : allAvailableQuestions;
+                                                const filteredCandidates = candidatesPool.filter(q => {
+                                                    const matchesSearch = (q.text || '').toLowerCase().includes(replaceSearch.toLowerCase()) ||
+                                                        (q.topic || '').toLowerCase().includes(replaceSearch.toLowerCase()) ||
+                                                        (q.unit || '').toLowerCase().includes(replaceSearch.toLowerCase());
+                                                    const matchesDiff = replaceDiffFilter === 'all' || q.difficulty === replaceDiffFilter;
+                                                    return matchesSearch && matchesDiff;
+                                                });
+
+                                                if (filteredCandidates.length === 0) {
+                                                    return (
+                                                        <div className="py-12 text-center text-slate-400 text-xs">
+                                                            No replacement questions found matching the selected filters.
                                                         </div>
+                                                    );
+                                                }
+
+                                                return filteredCandidates.map((cand) => (
+                                                    <div
+                                                        key={cand.id}
+                                                        onClick={() => handleConfirmReplacement(cand)}
+                                                        className="p-3 bg-slate-950/60 border border-slate-800 hover:border-amber-500 rounded-xl cursor-pointer transition-all flex justify-between items-start gap-3 group"
+                                                    >
+                                                        <div className="flex-1 text-xs text-slate-200 group-hover:text-white">
+                                                            <p className="line-clamp-2 leading-relaxed">{cand.text}</p>
+                                                            <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px]">
+                                                                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-medium">
+                                                                    {cand.unit || 'Unit 1'}
+                                                                </span>
+                                                                <span className={`px-1.5 py-0.5 rounded font-medium ${
+                                                                    cand.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400' :
+                                                                    cand.difficulty === 'Hard' ? 'bg-red-500/10 text-red-400' :
+                                                                    'bg-amber-500/10 text-amber-400'
+                                                                }`}>
+                                                                    {cand.difficulty || 'Medium'}
+                                                                </span>
+                                                                {cand.blooms_level && (
+                                                                    <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 font-medium">
+                                                                        {cand.blooms_level}
+                                                                    </span>
+                                                                )}
+                                                                {cand.co && (
+                                                                    <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-medium">
+                                                                        {cand.co}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <Badge className="bg-slate-900 text-amber-400 border-slate-800 text-xs font-bold shrink-0">
+                                                            {cand.marks}M
+                                                        </Badge>
                                                     </div>
-                                                    <Badge className="bg-slate-900 text-slate-300 border-slate-800 text-xs">
-                                                        {cand.marks}M
-                                                    </Badge>
-                                                </div>
-                                            ))}
+                                                ));
+                                            })()
+                                        )}
                                     </div>
                                 </motion.div>
                             </div>
@@ -1802,7 +2051,7 @@ function GeneratePaperContent() {
                                         </Button>
                                         <Button
                                             onClick={() => {
-                                                setPaperSections(prev => {
+                                                const updateSecs = (prev: PaperSection[]) => {
                                                     const next = [...prev];
                                                     const sec = { ...next[editingQuestion.sectionIndex] };
                                                     const qList = [...sec.questions];
@@ -1814,7 +2063,12 @@ function GeneratePaperContent() {
                                                     sec.questions = qList;
                                                     next[editingQuestion.sectionIndex] = sec;
                                                     return next;
-                                                });
+                                                };
+                                                if (activeSetTab === 'B') {
+                                                    setPaperSectionsSetB(updateSecs);
+                                                } else {
+                                                    setPaperSections(updateSecs);
+                                                }
                                                 setEditingQuestion(null);
                                             }}
                                             className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
@@ -1845,7 +2099,7 @@ function GeneratePaperContent() {
             {/* STEP 6: SAVE & EXPORT                                                     */}
             {/* ========================================================================= */}
             {step === 6 && (
-                <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8 max-w-2xl mx-auto text-center py-6">
+                <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8 max-w-3xl mx-auto text-center py-6">
                     <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto shadow-lg shadow-emerald-500/20">
                         <CheckCircle2 className="w-8 h-8" />
                     </div>
@@ -1857,29 +2111,108 @@ function GeneratePaperContent() {
                         </p>
                     </div>
 
-                    {/* Action Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
-                        <Button
-                            onClick={() => window.print()}
-                            className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-semibold h-12 flex items-center justify-center"
-                        >
-                            <Printer className="w-4 h-4 mr-2 text-amber-400" /> Print / Save PDF
-                        </Button>
-                        <Button
-                            onClick={handleExportDocx}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-lg shadow-blue-500/20 flex items-center justify-center"
-                        >
-                            <Download className="w-4 h-4 mr-2" /> Export Word (.docx)
-                        </Button>
-                        <Link href="/dashboard/generated">
+                    {/* Action Cards / Dual-Set Export Rows */}
+                    {generateBothSets ? (
+                        <div className="space-y-4 pt-4 text-left">
+                            {/* Set A Row */}
+                            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                <div>
+                                    <div className="flex items-center space-x-2">
+                                        <span className="font-bold text-white text-sm">Examination Set A</span>
+                                        <Badge className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px]">Primary Set</Badge>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        {paperSections.reduce((acc, s) => acc + s.questions.length, 0)} Questions • {targetBlueprintMarks} Marks
+                                    </p>
+                                </div>
+                                <div className="flex items-center space-x-2 w-full md:w-auto">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => {
+                                            setActiveSetTab('A');
+                                            window.print();
+                                        }}
+                                        className="bg-slate-950 hover:bg-slate-800 border border-slate-700 text-white text-xs h-9"
+                                    >
+                                        <Printer className="w-3.5 h-3.5 mr-1.5 text-amber-400" /> Print / PDF
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleExportDocx('A')}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 shadow-md shadow-blue-500/20"
+                                    >
+                                        <Download className="w-3.5 h-3.5 mr-1.5" /> Export Word (.docx)
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Set B Row */}
+                            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                <div>
+                                    <div className="flex items-center space-x-2">
+                                        <span className="font-bold text-white text-sm">Examination Set B</span>
+                                        <Badge className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px]">Alternate Set (Zero Overlap)</Badge>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        {paperSectionsSetB.reduce((acc, s) => acc + s.questions.length, 0)} Questions • {targetBlueprintMarks} Marks
+                                    </p>
+                                </div>
+                                <div className="flex items-center space-x-2 w-full md:w-auto">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => {
+                                            setActiveSetTab('B');
+                                            window.print();
+                                        }}
+                                        className="bg-slate-950 hover:bg-slate-800 border border-slate-700 text-white text-xs h-9"
+                                    >
+                                        <Printer className="w-3.5 h-3.5 mr-1.5 text-blue-400" /> Print / PDF
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleExportDocx('B')}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs h-9 shadow-md shadow-blue-500/20"
+                                    >
+                                        <Download className="w-3.5 h-3.5 mr-1.5" /> Export Word (.docx)
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-center pt-2">
+                                <Link href="/dashboard/generated">
+                                    <Button
+                                        variant="outline"
+                                        className="bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white font-semibold h-10 text-xs px-6"
+                                    >
+                                        <Eye className="w-4 h-4 mr-2" /> View Both in Generated Papers Archive
+                                    </Button>
+                                </Link>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
                             <Button
-                                variant="outline"
-                                className="w-full bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white font-semibold h-12"
+                                onClick={() => window.print()}
+                                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-semibold h-12 flex items-center justify-center"
                             >
-                                <Eye className="w-4 h-4 mr-2" /> View Archive
+                                <Printer className="w-4 h-4 mr-2 text-amber-400" /> Print / Save PDF
                             </Button>
-                        </Link>
-                    </div>
+                            <Button
+                                onClick={() => handleExportDocx('A')}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-lg shadow-blue-500/20 flex items-center justify-center"
+                            >
+                                <Download className="w-4 h-4 mr-2" /> Export Word (.docx)
+                            </Button>
+                            <Link href="/dashboard/generated">
+                                <Button
+                                    variant="outline"
+                                    className="w-full bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white font-semibold h-12"
+                                >
+                                    <Eye className="w-4 h-4 mr-2" /> View Archive
+                                </Button>
+                            </Link>
+                        </div>
+                    )}
 
                     <div className="pt-6 border-t border-slate-800/80">
                         <Button

@@ -8,8 +8,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { apiFetch } from '@/lib/api';
 
 const container = {
     hidden: { opacity: 0 },
@@ -53,7 +52,7 @@ export default function DashboardPage() {
 
         const fetchOverviewStats = async () => {
             try {
-                const res = await fetch(`${BACKEND_URL}/stats`);
+                const res = await apiFetch('/stats');
                 if (res.ok) {
                     const data = await res.json();
                     setStatsData(data);

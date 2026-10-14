@@ -90,32 +90,77 @@ body {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm 8mm 8mm 8mm;
+    margin: 8mm 10mm 8mm 10mm;
   }
 
-  html, body {
+  html,
+  body {
     background: #ffffff !important;
+    background-color: #ffffff !important;
     color: #000000 !important;
     font-family: "Times New Roman", Times, serif !important;
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow: visible !important;
   }
 
+  /* Strip all dark backgrounds, shadows, and text effects from the outer application shell */
+  body,
+  main,
+  section,
+  article {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Hide app chrome: sidebars, top headers, navigation, buttons, archive lists, and no-print elements */
   aside,
   header,
   nav,
   button,
-  .no-print {
+  .no-print,
+  .print-hidden,
+  [data-no-print="true"] {
     display: none !important;
+    visibility: hidden !important;
   }
 
+  /* Reset dashboard layout wrapper margins (e.g. sidebar ml-64 / ml-20) */
+  div[class*="ml-"],
   main {
+    margin: 0 !important;
+    margin-left: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  /* Unbox modals when printing from inside a preview dialog */
+  .fixed,
+  [role="dialog"],
+  .backdrop-blur-sm,
+  div[class*="bg-black"],
+  div[class*="bg-slate-900"],
+  div[class*="bg-slate-950"] {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    background: #ffffff !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
+  /* Official PCCOER Paper Container: clean white A4 sheet */
   .pccoer-paper-container {
     max-width: 100% !important;
     width: 100% !important;
@@ -123,15 +168,35 @@ body {
     padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
+    border-radius: 0 !important;
     background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    position: relative !important;
+  }
+
+  .pccoer-paper-container * {
     color: #000000 !important;
   }
 
-  .pccoer-paper-container table,
+  .pccoer-paper-container table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+  }
+
   .pccoer-paper-container th,
-  .pccoer-paper-container td,
-  .pccoer-paper-container div {
+  .pccoer-paper-container td {
+    border: 1px solid #000000 !important;
     border-color: #000000 !important;
+    color: #000000 !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+
+  .pccoer-paper-container img {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Prevent question groups from splitting across pages during printing */
@@ -162,15 +227,7 @@ body {
     page-break-before: always !important;
     break-before: page !important;
     margin-top: 0 !important;
-    padding-top: 0 !important;
+    padding-top: 8mm !important;
     border-top: none !important;
-  }
-
-  * {
-    color: #000000 !important;
-    box-shadow: none !important;
-    text-shadow: none !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 }

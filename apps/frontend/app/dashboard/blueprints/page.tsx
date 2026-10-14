@@ -12,8 +12,7 @@ import {
 } from 'lucide-react';
 import { Blueprint, BlueprintSection } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { apiFetch } from '@/lib/api';
 
 interface ExtendedSection extends BlueprintSection {
     difficulty?: string[];
@@ -84,7 +83,7 @@ export default function BlueprintsPage() {
     const fetchBlueprints = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch(`${BACKEND_URL}/blueprints`);
+            const res = await apiFetch('/blueprints');
             if (res.ok) {
                 const data = await res.json();
                 if (data && data.length > 0) {
@@ -313,9 +312,8 @@ export default function BlueprintsPage() {
                 })),
             };
 
-            const res = await fetch(`${BACKEND_URL}/blueprints`, {
+            const res = await apiFetch('/blueprints', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
 
@@ -339,7 +337,7 @@ export default function BlueprintsPage() {
         if (!confirm('Are you sure you want to delete this blueprint?')) return;
         setIsDeleting(id);
         try {
-            await fetch(`${BACKEND_URL}/blueprints/${id}`, { method: 'DELETE' });
+            await apiFetch(`/blueprints/${id}`, { method: 'DELETE' });
             setBlueprints(prev => prev.filter(b => b.id !== id));
         } catch (err) {
             console.error(err);

@@ -19,12 +19,14 @@ import {
     BrainCircuit,
     RefreshCw,
     Layers,
-    Tag
+    Tag,
+    AlertCircle,
+    CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { apiFetch } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 interface Question {
     id: string;
@@ -44,6 +46,8 @@ interface Question {
 
 export default function LibraryPage() {
     const [questions, setQuestions] = useState<Question[]>([]);
+    const [needsReviewQuestions, setNeedsReviewQuestions] = useState<Question[]>([]);
+    const [activeTab, setActiveTab] = useState<'all' | 'needs_review'>('all');
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
     const [isReanalyzing, setIsReanalyzing] = useState(false);
@@ -82,24 +86,48 @@ export default function LibraryPage() {
     const fetchQuestions = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch(`${BACKEND_URL}/questions`);
-            if (!res.ok) throw new Error('Failed to fetch questions');
-            const data = await res.json();
-            const normalized = data.map((q: any) => ({
-                id: q.id,
-                text: q.text || q.question_text || '',
-                marks: q.marks || 5,
-                difficulty: q.difficulty || 'Medium',
-                blooms_level: q.blooms_level || 'L2_Understand',
-                topic: q.topic || 'General',
-                unit: q.unit || null,
-                co: q.co || 'CO1',
-                question_type: q.question_type || 'Short Answer',
-                classification_source: q.classification_source || 'ai',
-                metadata: q.metadata || {},
-                created_at: q.created_at,
-            }));
-            setQuestions(normalized);
+            const [resAll, resReview] = await Promise.all([
+                apiFetch('/questions'),
+                apiFetch('/questions?needs_review=true')
+            ]);
+
+            if (resAll.ok) {
+                const data = await resAll.json();
+                const normalized = data.map((q: any) => ({
+                    id: q.id,
+                    text: q.text || q.question_text || '',
+                    marks: q.marks || 5,
+                    difficulty: q.difficulty || 'Medium',
+                    blooms_level: q.blooms_level || 'L2_Understand',
+                    topic: q.topic || 'General',
+                    unit: q.unit || null,
+                    co: q.co || 'CO1',
+                    question_type: q.question_type || 'Short Answer',
+                    classification_source: q.classification_source || 'ai',
+                    metadata: q.metadata || {},
+                    created_at: q.created_at,
+                }));
+                setQuestions(normalized);
+            }
+
+            if (resReview.ok) {
+                const dataReview = await resReview.json();
+                const normalizedReview = dataReview.map((q: any) => ({
+                    id: q.id,
+                    text: q.text || q.question_text || '',
+                    marks: q.marks || 5,
+                    difficulty: q.difficulty || 'Medium',
+                    blooms_level: q.blooms_level || 'L2_Understand',
+                    topic: q.topic || 'General',
+                    unit: q.unit || null,
+                    co: q.co || 'CO1',
+                    question_type: q.question_type || 'Short Answer',
+                    classification_source: q.classification_source || 'ai',
+                    metadata: q.metadata || {},
+                    created_at: q.created_at,
+                }));
+                setNeedsReviewQuestions(normalizedReview);
+            }
         } catch (err) {
             console.error('Fetch questions error:', err);
         } finally {
@@ -115,7 +143,7 @@ export default function LibraryPage() {
         if (!confirm('Are you sure you want to delete this question?')) return;
         setIsDeleting(id);
         try {
-            const res = await fetch(`${BACKEND_URL}/questions/${id}`, { method: 'DELETE' });
+            const res = await apiFetch(`/questions/${id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed to delete question');
             setQuestions(prev => prev.filter(q => q.id !== id));
         } catch (err) {
@@ -144,9 +172,8 @@ export default function LibraryPage() {
         if (!editingQuestion) return;
         setIsSavingEdit(true);
         try {
-            const res = await fetch(`${BACKEND_URL}/questions/${editingQuestion.id}`, {
+            const res = await apiFetch(`/questions/${editingQuestion.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...editForm,
                     source: 'teacher',
@@ -162,6 +189,7 @@ export default function LibraryPage() {
                 classification_source: 'teacher',
                 metadata: updated.metadata || q.metadata,
             } : q));
+            setNeedsReviewQuestions(prev => prev.filter(q => q.id !== editingQuestion.id));
 
             setEditingQuestion(null);
         } catch (err) {
@@ -172,11 +200,33 @@ export default function LibraryPage() {
         }
     };
 
+    const handleConfirmClassification = async (q: Question) => {
+        try {
+            const res = await apiFetch(`/questions/${q.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    difficulty: q.difficulty,
+                    blooms_level: q.blooms_level,
+                    unit: q.unit,
+                    topic: q.topic,
+                    source: 'teacher'
+                })
+            });
+            if (!res.ok) throw new Error('Failed to confirm classification');
+
+            setQuestions(prev => prev.map(item => item.id === q.id ? { ...item, classification_source: 'teacher' } : item));
+            setNeedsReviewQuestions(prev => prev.filter(item => item.id !== q.id));
+        } catch (err) {
+            console.error('Confirm classification error:', err);
+            alert('Failed to lock classification.');
+        }
+    };
+
     const handleAnalyzeMissing = async () => {
         setIsReanalyzing(true);
         setReanalyzeMsg(null);
         try {
-            const res = await fetch(`${BACKEND_URL}/questions/analyze-missing`, { method: 'POST' });
+            const res = await apiFetch('/questions/analyze-missing', { method: 'POST' });
             if (!res.ok) throw new Error('Failed to re-analyze');
             const result = await res.json();
             setReanalyzeMsg(`Analyzed ${result.analyzed || 0} questions.`);
@@ -190,11 +240,12 @@ export default function LibraryPage() {
     };
 
     // Derived filter options
-    const uniqueUnits = Array.from(new Set(questions.map(q => q.unit).filter(Boolean))).sort();
+    const currentList = activeTab === 'needs_review' ? needsReviewQuestions : questions;
+    const uniqueUnits = Array.from(new Set(currentList.map(q => q.unit).filter(Boolean))).sort();
     const uniqueBlooms = ['L1_Remember', 'L2_Understand', 'L3_Apply', 'L4_Analyze', 'L5_Evaluate', 'L6_Create'];
-    const uniqueTypes = Array.from(new Set(questions.map(q => q.question_type).filter(Boolean))).sort();
+    const uniqueTypes = Array.from(new Set(currentList.map(q => q.question_type).filter(Boolean))).sort();
 
-    const filteredQuestions = questions.filter(q => {
+    const filteredQuestions = currentList.filter(q => {
         const textMatch = q.text.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (q.topic && q.topic.toLowerCase().includes(searchTerm.toLowerCase()));
         const diffMatch = filterDifficulty === 'all' || q.difficulty === filterDifficulty;
@@ -268,13 +319,47 @@ export default function LibraryPage() {
                 </div>
             )}
 
+            {/* Tab Strip: All Questions vs Needs Review */}
+            <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+                <button
+                    onClick={() => setActiveTab('all')}
+                    className={cn(
+                        "px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2",
+                        activeTab === 'all'
+                            ? "bg-slate-800 text-white shadow-md border border-slate-700"
+                            : "text-slate-400 hover:text-white hover:bg-slate-900/60"
+                    )}
+                >
+                    <Layers className="w-4 h-4 text-amber-400" />
+                    All Questions
+                    <span className="text-xs bg-slate-700/80 text-slate-300 px-2 py-0.5 rounded-full font-mono">
+                        {questions.length}
+                    </span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('needs_review')}
+                    className={cn(
+                        "px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2",
+                        activeTab === 'needs_review'
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-md"
+                            : "text-slate-400 hover:text-amber-300 hover:bg-amber-500/10"
+                    )}
+                >
+                    <AlertCircle className="w-4 h-4 text-amber-400" />
+                    Needs Review
+                    <span className="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono font-bold">
+                        {needsReviewQuestions.length}
+                    </span>
+                </button>
+            </div>
+
             {/* Filter Bar */}
             <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl backdrop-blur-md grid grid-cols-1 md:grid-cols-12 gap-3 shadow-lg">
                 {/* Search */}
                 <div className="md:col-span-4 relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <Input
-                        placeholder="Search questions or topics..."
+                        placeholder={activeTab === 'needs_review' ? "Search unconfirmed questions..." : "Search questions or topics..."}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-10 bg-slate-950 border-slate-800 text-white placeholder:text-slate-500 focus-visible:ring-amber-500 h-10"
@@ -414,7 +499,7 @@ export default function LibraryPage() {
                                             </Badge>
                                         )}
                                         {q.question_type && (
-                                            <span className="text-[11px] text-slate-400 px-1.5 py-0.5 bg-slate-950/60 rounded border border-slate-800">
+                                            <span className="hidden sm:inline-block text-[11px] text-slate-400 px-1.5 py-0.5 bg-slate-950/60 rounded border border-slate-800">
                                                 {q.question_type}
                                             </span>
                                         )}
@@ -424,6 +509,28 @@ export default function LibraryPage() {
                                     <p className="text-sm text-slate-100 font-normal leading-relaxed pt-1">
                                         {q.text}
                                     </p>
+
+                                    {/* Low Confidence Review Banner */}
+                                    {(!isTeacher && (confidence == null || confidence < 60 || activeTab === 'needs_review')) && (
+                                        <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center justify-between gap-2">
+                                            <span className="flex items-center gap-1.5">
+                                                <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                                                <span>
+                                                    <strong>Low AI Confidence {confidence ? `(${confidence}%)` : '(<60%)'}:</strong>
+                                                    {q.metadata?.confidence_source ? ` via ${q.metadata.confidence_source.replace('_', ' ')}` : ' unconfirmed classification'}
+                                                </span>
+                                            </span>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleConfirmClassification(q)}
+                                                className="h-7 text-[11px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-500/30 font-semibold"
+                                            >
+                                                <Check className="w-3.5 h-3.5 mr-1" />
+                                                Confirm &amp; Lock
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Footer & Actions */}

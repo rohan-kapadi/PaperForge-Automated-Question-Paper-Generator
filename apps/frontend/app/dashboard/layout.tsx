@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
     LayoutDashboard,
     Database,
@@ -17,11 +18,11 @@ import {
     LogOut,
     Menu,
     X,
-    User
+    User,
+    Shield,
+    ShieldAlert
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { User as SupabaseUser } from '@supabase/supabase-js';
-import { useEffect } from 'react';
+import { AuthProvider, useAuth, UserRole } from '@/lib/auth-context';
 
 interface NavItem {
     icon: any;
@@ -69,38 +70,20 @@ const navGroups: NavGroup[] = [
 
 const allNavItems = navGroups.flatMap(g => g.items);
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function DashboardInnerLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [user, setUser] = useState<SupabaseUser | null>(null);
+    const { user, profile, role, isHODOrAdmin, roleOverride, setRoleOverride, signOut, isLoading } = useAuth();
 
     useEffect(() => {
-        const getUser = async () => {
-            const { data: { user: authUser } } = await supabase.auth.getUser();
-            if (!authUser) {
-                router.push('/login');
-                return;
-            }
-            setUser(authUser);
-        };
-        getUser();
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (!session) {
-                router.push('/login');
-            } else {
-                setUser(session.user);
-            }
-        });
-
-        return () => {
-            subscription.unsubscribe();
-        };
-    }, [router]);
+        if (!isLoading && !user) {
+            router.push('/login');
+        }
+    }, [user, isLoading, router]);
 
     const handleLogout = async () => {
-        await supabase.auth.signOut();
+        await signOut();
         router.push('/login');
     };
 
@@ -121,11 +104,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {/* Background Grid */}
             <div className="fixed inset-0 bg-grid-white/[0.02] bg-[size:50px_50px] pointer-events-none" />
 
+            {/* Mobile Backdrop Overlay */}
+            {sidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar */}
             <aside
                 className={cn(
-                    'fixed left-0 top-0 z-40 h-screen bg-slate-900/80 backdrop-blur-xl border-r border-slate-800 transition-all duration-300 shadow-2xl',
-                    sidebarOpen ? 'w-64' : 'w-20'
+                    'fixed left-0 top-0 z-40 h-screen bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 transition-all duration-300 shadow-2xl',
+                    sidebarOpen
+                        ? 'w-64 translate-x-0'
+                        : '-translate-x-full md:translate-x-0 md:w-20'
                 )}
             >
                 <div className="flex flex-col h-full">
@@ -209,22 +202,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         ))}
                     </nav>
 
-
-                    {/* User Profile (Bottom Sidebar) */}
-                    <div className="p-4 border-t border-slate-800">
+                    {/* User Profile & Role (Bottom Sidebar) */}
+                    <div className="p-4 border-t border-slate-800 space-y-2">
                         <div className={cn("flex items-center", sidebarOpen ? "justify-between" : "justify-center")}>
                             {sidebarOpen && (
-                                <div className="flex items-center space-x-3">
-                                    <div className="w-9 h-9 bg-slate-700 rounded-full flex items-center justify-center border border-slate-600">
+                                <div className="flex items-center space-x-3 overflow-hidden">
+                                    <div className="w-9 h-9 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700 shrink-0">
                                         <User className="w-5 h-5 text-amber-500" />
                                     </div>
-                                    <div className="text-sm">
+                                    <div className="text-sm truncate">
                                         <p className="font-medium text-white truncate max-w-[120px]">
-                                            {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+                                            {profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Faculty'}
                                         </p>
-                                        <p className="text-xs text-slate-500 truncate max-w-[120px]">
-                                            {user?.email || 'Logged In'}
-                                        </p>
+                                        <div className="flex items-center space-x-1 mt-0.5">
+                                            <Badge className={cn(
+                                                "text-[9px] px-1.5 py-0 font-bold uppercase",
+                                                role === 'Admin' ? "bg-purple-500/20 text-purple-300 border-purple-500/30" :
+                                                role === 'HOD' ? "bg-amber-500/20 text-amber-300 border-amber-500/30" :
+                                                "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                                            )}>
+                                                {role}
+                                            </Badge>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -232,7 +231,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                                 variant="ghost"
                                 size="icon"
                                 onClick={handleLogout}
-                                className="text-slate-500 hover:text-red-400 hover:bg-slate-800"
+                                className="text-slate-500 hover:text-red-400 hover:bg-slate-800 shrink-0"
                                 title="Logout"
                             >
                                 <LogOut className="w-5 h-5" />
@@ -246,28 +245,65 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div
                 className={cn(
                     'transition-all duration-300 relative z-10',
-                    sidebarOpen ? 'ml-64' : 'ml-20'
+                    'ml-0',
+                    sidebarOpen ? 'md:ml-64' : 'md:ml-20'
                 )}
             >
                 {/* Top Bar */}
-                <header className="h-16 bg-slate-900/50 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30">
-                    <div className="h-full px-8 flex items-center justify-between">
-                        <h1 className="text-xl font-bold text-white tracking-tight">{currentPage}</h1>
+                <header className="h-16 bg-slate-900/50 backdrop-blur-md border-b border-slate-800 sticky top-0 z-20">
+                    <div className="h-full px-4 sm:px-6 md:px-8 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <button
+                                onClick={() => setSidebarOpen(!sidebarOpen)}
+                                className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 md:hidden"
+                                title="Toggle Navigation Menu"
+                            >
+                                <Menu className="w-5 h-5" />
+                            </button>
+                            <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">{currentPage}</h1>
+                        </div>
 
-                        <div className="flex items-center space-x-4">
-                            <div className="bg-slate-800/50 rounded-full px-4 py-1.5 border border-slate-700 flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 sm:space-x-3">
+                            {/* Role Switcher (Live Testing for HOD vs Teacher) */}
+                            <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-2 sm:px-2.5 py-1 flex items-center space-x-1.5 sm:space-x-2 text-xs">
+                                <span className="text-slate-500 font-medium hidden sm:flex items-center gap-1">
+                                    <Shield className="w-3.5 h-3.5 text-amber-400" /> Role:
+                                </span>
+                                <select
+                                    value={role}
+                                    onChange={(e) => setRoleOverride(e.target.value as UserRole)}
+                                    className="bg-slate-950 border border-slate-700 text-white rounded-lg px-2 py-0.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    title="Switch active role for testing moderation permissions"
+                                >
+                                    <option value="Teacher">Teacher</option>
+                                    <option value="HOD">HOD</option>
+                                    <option value="Admin">Admin</option>
+                                </select>
+                            </div>
+
+                            <div className="bg-slate-800/50 rounded-full px-3 sm:px-4 py-1.5 border border-slate-700 flex items-center space-x-2">
                                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                <span className="text-xs font-medium text-slate-300">System Online</span>
+                                <span className="text-xs font-medium text-slate-300 hidden sm:inline">System Online</span>
                             </div>
                         </div>
                     </div>
                 </header>
 
                 {/* Page Content */}
-                <main className="p-8 bg-slate-950 min-h-[calc(100vh-4rem)]">
+                <main className="p-4 sm:p-6 md:p-8 bg-slate-950 min-h-[calc(100vh-4rem)]">
                     {children}
                 </main>
             </div>
         </div>
+    );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+    return (
+        <AuthProvider>
+            <DashboardInnerLayout>
+                {children}
+            </DashboardInnerLayout>
+        </AuthProvider>
     );
 }

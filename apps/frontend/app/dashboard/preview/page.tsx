@@ -42,7 +42,7 @@ export default function PaperFormatPreviewPage() {
             </div>
 
             {/* Official Paper Render Container */}
-            <div className="rounded-2xl p-2 md:p-6 bg-slate-900/30 border border-slate-800/80 shadow-2xl backdrop-blur-sm">
+            <div className="rounded-2xl p-2 md:p-6 bg-slate-900/30 border border-slate-800/80 shadow-2xl backdrop-blur-sm print:bg-white print:border-none print:shadow-none print:p-0 print:m-0">
                 <CollegeQuestionPaper
                     department="Computer Engineering"
                     subjectName="Database Management Systems"

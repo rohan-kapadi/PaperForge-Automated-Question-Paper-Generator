@@ -1,10 +1,21 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { SupabaseService } from '../supabase/supabase.service';
 
 export class CreateAuditLogDto {
+    @IsString()
+    @IsNotEmpty()
     action: string;
+
+    @IsOptional()
     details?: any;
+
+    @IsOptional()
+    @IsString()
     user_id?: string;
+
+    @IsOptional()
+    @IsString()
     ip_address?: string;
 }
 

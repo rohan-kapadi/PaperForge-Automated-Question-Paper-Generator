@@ -1,29 +1,95 @@
 import { Injectable, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { IsString, IsNotEmpty, IsNumber, Min, IsOptional, IsArray, IsBoolean, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { SupabaseService } from '../supabase/supabase.service';
 
 export class BlueprintSectionConfig {
+    @IsString()
+    @IsNotEmpty()
     id: string;
+
+    @IsString()
+    @IsNotEmpty()
     name: string;
+
+    @IsNumber()
+    @Min(1)
     marks_per_question: number;
+
+    @IsNumber()
+    @Min(1)
     number_of_questions: number;
+
+    @IsNumber()
+    @Min(1)
     total_marks: number;
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     difficulty?: string[];          // e.g. ['Easy', 'Medium']
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     blooms_levels?: string[];       // e.g. ['L1_Remember', 'L2_Understand']
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     question_types?: string[];      // e.g. ['Short Answer', 'Definition']
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     units?: string[];               // e.g. ['Unit 1', 'Unit 2']
+
+    @IsOptional()
+    @IsBoolean()
     is_or_choice?: boolean;         // True if this is an alternative OR choice section
+
+    @IsOptional()
+    @IsString()
     paired_with_id?: string;        // ID of the primary section this is paired with
+
+    @IsOptional()
+    @IsString()
     pair_label?: string;            // e.g. 'Que 1 OR Que 2'
 }
 
 export class CreateBlueprintDto {
+    @IsString()
+    @IsNotEmpty()
     title: string;
+
+    @IsOptional()
+    @IsString()
     exam_type?: string;             // 'Unit_Test_1' | 'Unit_Test_2' | 'In_Sem' | 'End_Sem_Final'
+
+    @IsOptional()
+    @IsString()
     subject_code?: string;
+
+    @IsNumber()
+    @Min(1)
     total_marks: number;
+
+    @IsNumber()
+    @Min(1)
     duration_minutes: number;
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     instructions?: string[];
+
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => BlueprintSectionConfig)
     sections: BlueprintSectionConfig[];
+
+    @IsOptional()
+    @IsBoolean()
     has_or_choices?: boolean;
 }
 

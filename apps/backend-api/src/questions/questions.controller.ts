@@ -3,6 +3,7 @@ import {
     UploadedFile, UseInterceptors, BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { QuestionsService } from './questions.service';
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv'];
@@ -11,9 +12,12 @@ const ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv'];
 export class QuestionsController {
     constructor(private readonly questionsService: QuestionsService) { }
 
-    // GET /questions?bankId=<uuid>
+    // GET /questions?bankId=<uuid>&needs_review=true
     @Get()
-    findAll(@Query('bankId') bankId?: string) {
+    findAll(@Query('bankId') bankId?: string, @Query('needs_review') needsReview?: string) {
+        if (needsReview === 'true') {
+            return this.questionsService.findNeedsReview(bankId);
+        }
         return this.questionsService.findAll(bankId);
     }
 
@@ -43,6 +47,7 @@ export class QuestionsController {
 
     // POST /questions/upload — parse file and save to DB
     @Post('upload')
+    @Throttle({ default: { limit: 5, ttl: 60000 } })
     @UseInterceptors(FileInterceptor('file'))
     async uploadFile(@UploadedFile() file: Express.Multer.File) {
         if (!file) throw new BadRequestException('No file uploaded.');

@@ -1,70 +1,195 @@
-import { Injectable, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, NotFoundException, Optional } from '@nestjs/common';
+import {
+    IsString, IsNotEmpty, IsNumber, Min, IsOptional, IsArray,
+    IsBoolean, IsIn, ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { SupabaseService } from '../supabase/supabase.service';
+import { SettingsService } from '../settings/settings.service';
+import { AuditService } from '../audit/audit.service';
 
 export class CourseOutcomeDto {
+    @IsString()
+    @IsNotEmpty()
     co: string;
+
+    @IsString()
     desc: string;
+
+    @IsString()
     bt: string;
 }
 
 export class GeneratePaperDto {
+    @IsOptional()
+    @IsString()
     blueprint_id?: string;
+
+    @IsOptional()
     blueprint?: any;
+
+    @IsOptional()
+    @IsString()
     bank_id?: string;
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     bank_ids?: string[];
+
+    @IsOptional()
+    @IsString()
     title?: string;
+
+    @IsOptional()
+    @IsString()
     exam_type?: string;
+
+    @IsOptional()
+    @IsString()
     subject_code?: string;
+
+    @IsOptional()
+    @IsString()
     set_name?: string;
+
+    @IsOptional()
+    @IsIn(['Balanced', 'Easy', 'Moderate', 'Challenging'])
     difficulty_preset?: 'Balanced' | 'Easy' | 'Moderate' | 'Challenging';
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     selected_units?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     selected_blooms?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
     avoid_question_ids?: string[];
 
     // --- PCCOER Autonomous College Exam Header Fields ---
+    @IsOptional()
+    @IsString()
     academic_year?: string;          // e.g. '2025 – 26'
+
+    @IsOptional()
+    @IsString()
     term?: string;                   // e.g. 'II'
+
+    @IsOptional()
+    @IsString()
     record_no?: string;              // e.g. 'ACAD/R/11'
+
+    @IsOptional()
+    @IsString()
     department?: string;             // e.g. 'Computer Engineering'
+
+    @IsOptional()
+    @IsString()
     student_class?: string;          // e.g. 'SE'
+
+    @IsOptional()
+    @IsString()
     div?: string;                    // e.g. 'A, B, C, D, E, F'
+
+    @IsOptional()
+    @IsString()
     subject_name?: string;           // e.g. 'Database Management Systems'
+
+    @IsOptional()
+    @IsNumber()
+    @Min(1)
     max_marks?: number;              // e.g. 30
+
+    @IsOptional()
+    @IsString()
     duration?: string;               // e.g. '1 hr.'
+
+    @IsOptional()
+    @IsString()
     exam_date?: string;              // e.g. '16/02/2026'
+
+    @IsOptional()
+    @IsString()
     rev?: string;                    // e.g. '00'
+
+    @IsOptional()
+    @IsString()
     rev_date?: string;               // e.g. '01-09-2025'
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => CourseOutcomeDto)
     course_outcomes?: CourseOutcomeDto[];
 
     // --- OR-Pairing Mode ---
-    // When true, sections are treated as paired (S1 ↔ S2, S3 ↔ S4).
-    // Each pair generates Q1 (A,B,C) OR Q2 (A,B,C) with strict difficulty/Bloom's parity.
+    @IsOptional()
+    @IsBoolean()
     use_or_pairing?: boolean;
+
+    @IsOptional()
+    @IsNumber()
+    @Min(1)
     sub_questions_per_group?: number;   // default 3
+
+    @IsOptional()
+    @IsNumber()
+    @Min(1)
     marks_per_sub_question?: number;    // default 5
 }
 
 export class UpdatePaperStatusDto {
+    @IsString()
+    @IsIn(['Draft', 'Submitted_For_Review', 'Approved', 'Rejected', 'Generated'])
     status: 'Draft' | 'Submitted_For_Review' | 'Approved' | 'Rejected' | 'Generated';
+
+    @IsOptional()
+    @IsString()
     moderation_comments?: string;
+
+    @IsOptional()
+    @IsString()
+    user_id?: string;
 }
 
 export class ReplaceQuestionDto {
+    @IsNumber()
+    @Min(0)
     section_index: number;
+
+    @IsNumber()
+    @Min(0)
     question_index: number;
+
+    @IsOptional()
+    @IsString()
     new_question_id?: string;
+
+    @IsOptional()
+    @IsString()
     bank_id?: string;
 }
 
 @Injectable()
 export class PapersService {
-    constructor(private supabaseService: SupabaseService) { }
+    constructor(
+        private supabaseService: SupabaseService,
+        @Optional() private settingsService?: SettingsService,
+        @Optional() private auditService?: AuditService
+    ) { }
 
     // -------------------------------------------------------------------------
     // GENERATE PAPER
     // -------------------------------------------------------------------------
     async generate(dto: GeneratePaperDto) {
         const client = this.supabaseService.getClient();
+        const instSettings = this.settingsService ? await this.settingsService.getSettingsMap() : {};
 
         // 1. Resolve Blueprint
         let blueprint: any = null;
@@ -338,7 +463,7 @@ export class PapersService {
             header: {
                 title: dto.title || blueprint.title || 'Examination Question Paper',
                 subject_code: dto.subject_code || blueprint.subject_code || 'EXAM-101',
-                duration_minutes: blueprint.duration_minutes || 90,
+                duration_minutes: blueprint.duration_minutes || (instSettings['default_duration_minutes'] ? parseInt(instSettings['default_duration_minutes'], 10) : 90),
                 total_marks: blueprint.total_marks || actualTotalMarks,
                 instructions: blueprint.instructions || [
                     'Answer all questions in sequential order.',
@@ -346,17 +471,21 @@ export class PapersService {
                     'Assume suitable data wherever necessary.',
                 ],
                 set_name: dto.set_name || 'Set A',
-                // Autonomous College Format (PCET PCCOER)
-                academic_year: dto.academic_year || '2025 – 26',
+                // Autonomous College Format (PCET PCCOER & Institution Settings)
+                trust_name: instSettings['trust_name'] || "Pimpri Chinchwad Education Trust's",
+                college_name: instSettings['college_name'] || 'Pimpri Chinchwad College of Engineering & Research Ravet, Pune',
+                affiliation: instSettings['affiliation'] || 'An Autonomous Institute | NBA Accredited (4 UG Programs) | NAAC A++ Accredited | ISO 21001:2018 Certified',
+                iqac_text: instSettings['iqac_text'] || 'IQAC PCCOER',
+                academic_year: dto.academic_year || instSettings['academic_year'] || '2025 – 26',
                 term: dto.term || 'II',
                 exam_type_display: dto.exam_type || blueprint.exam_type || 'UNIT TEST',
-                record_no: dto.record_no || 'ACAD/R/11',
-                department: dto.department || 'Computer Engineering',
+                record_no: dto.record_no || instSettings['record_no'] || 'ACAD/R/11',
+                department: dto.department || instSettings['department'] || 'Computer Engineering',
                 student_class: dto.student_class || 'SE',
                 div: dto.div || 'A, B, C, D, E, F',
                 subject_name: dto.subject_name || dto.title || blueprint.title || '',
                 max_marks: dto.max_marks || blueprint.total_marks || actualTotalMarks,
-                duration: dto.duration || `${blueprint.duration_minutes || 90} Min`,
+                duration: dto.duration || `${blueprint.duration_minutes || instSettings['default_duration_minutes'] || 90} Min`,
                 exam_date: dto.exam_date || new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
                 rev: dto.rev || '00',
                 rev_date: dto.rev_date || '01-09-2025',
@@ -472,9 +601,41 @@ export class PapersService {
     }
 
     // -------------------------------------------------------------------------
-    // UPDATE STATUS / MODERATION
+    // UPDATE STATUS / MODERATION (Step 7.2)
     // -------------------------------------------------------------------------
     async updateStatus(id: string, dto: UpdatePaperStatusDto) {
+        const client = this.supabaseService.getClient();
+
+        // 1. Fetch current paper to verify status transition
+        const { data: existing, error: fetchErr } = await client
+            .from('generated_papers')
+            .select('id, status, title')
+            .eq('id', id)
+            .single();
+
+        if (fetchErr || !existing) throw new NotFoundException(`Paper ${id} not found`);
+
+        const currentStatus = existing.status || 'Generated';
+
+        // Step 7.2: State machine check for valid transitions
+        const VALID_TRANSITIONS: Record<string, string[]> = {
+            'Generated': ['Submitted_For_Review', 'Draft'],
+            'Draft': ['Submitted_For_Review'],
+            'Submitted_For_Review': ['Approved', 'Rejected'],
+            'Rejected': ['Draft', 'Submitted_For_Review'],
+            'Approved': ['Draft'],
+        };
+
+        if (currentStatus !== dto.status) {
+            const allowed = VALID_TRANSITIONS[currentStatus] || [];
+            if (!allowed.includes(dto.status)) {
+                throw new HttpException(
+                    `Cannot transition paper from status "${currentStatus}" to "${dto.status}". Allowed transitions: [${allowed.join(', ') || 'None'}]`,
+                    HttpStatus.BAD_REQUEST
+                );
+            }
+        }
+
         const payload: any = {
             status: dto.status,
         };
@@ -483,8 +644,7 @@ export class PapersService {
             payload.moderated_at = new Date().toISOString();
         }
 
-        const { data, error } = await this.supabaseService
-            .getClient()
+        const { data, error } = await client
             .from('generated_papers')
             .update(payload)
             .eq('id', id)
@@ -496,6 +656,22 @@ export class PapersService {
             }
             throw new HttpException(error.message, HttpStatus.BAD_GATEWAY);
         }
+
+        // Record in audit_logs
+        if (this.auditService) {
+            await this.auditService.log(
+                `paper_status_${dto.status.toLowerCase()}`,
+                {
+                    paper_id: id,
+                    paper_title: existing.title,
+                    previous_status: currentStatus,
+                    new_status: dto.status,
+                    moderation_comments: dto.moderation_comments || null,
+                },
+                dto.user_id
+            );
+        }
+
         return this.formatPaper(data[0]);
     }
 
@@ -649,6 +825,7 @@ export class PapersService {
             topic: q.topic,
             unit: q.unit,
             question_type: q.question_type,
+            co: q.co,
         }));
     }
 

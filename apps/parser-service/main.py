@@ -7,11 +7,16 @@ import io
 import csv
 from typing import List, Dict, Optional
 
+import os
+
 app = FastAPI(title="Exam Parser Service", version="3.1")
+
+allowed_origins_env = os.getenv("PARSER_ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:3000")
+allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,7 +81,14 @@ DEFINITION_PATTERNS = [
 ]
 
 UNIT_HEADER_REGEX = re.compile(
-    r'^\s*(?:unit|module|chapter|part)\s*([0-9ivxlcdm]+)(?:[\s:–—\-]+(.*))?$',
+    r'^\s*(?:unit|module|chapter|part)\s*[:\-\.]?\s*([0-9ivxlcdm]+)(?:[\s:–—\-]+(.*))?$',
+    re.IGNORECASE
+)
+ALL_CAPS_UNIT_REGEX = re.compile(
+    r'^\s*(?:UNIT|MODULE|CHAPTER|PART)\s*[:\-\.]?\s*([0-9IVXLCDM]+)(?:[\s:–—\-]+(.*))?$'
+)
+CHAPTER_NUMBER_REGEX = re.compile(
+    r'^\s*(?:chapter|ch\.)\s*([0-9ivxlcdm]+)(?:[\s:–—\-]+(.*))?$',
     re.IGNORECASE
 )
 
@@ -89,9 +101,60 @@ ROMAN_TO_INT = {
     'vii': 7, 'viii': 8, 'ix': 9, 'x': 10, 'xi': 11, 'xii': 12
 }
 
+CONFIDENCE_SOURCES = {
+    'document_header': 0.95,
+    'spreadsheet_column': 0.90,
+    'regex_match': 0.75,
+    'position_inferred': 0.50,
+    'default': 0.25,
+}
+
 
 def clean_text(text: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def normalize_unit_string(val: Optional[str]) -> Optional[str]:
+    """Normalize unit values (e.g. '1', 'i', 'Unit 2', 'Chapter 3') to standard 'Unit X'."""
+    if not val:
+        return None
+    cleaned = clean_text(str(val))
+    if not cleaned:
+        return None
+    lower = cleaned.lower()
+    if lower in ROMAN_TO_INT:
+        return f"Unit {ROMAN_TO_INT[lower]}"
+    if cleaned.isdigit():
+        return f"Unit {cleaned}"
+    m = re.match(r'^(?:unit|module|chapter|part)\s*[:\-\.]?\s*([0-9ivxlcdm]+)', cleaned, re.IGNORECASE)
+    if m:
+        num = m.group(1).lower()
+        return f"Unit {ROMAN_TO_INT.get(num, num)}"
+    return cleaned
+
+
+def detect_unit_header(line: str) -> Optional[tuple]:
+    """Detect if a text line represents a unit/module/chapter header in PDFs or DOCX."""
+    for pattern in (UNIT_HEADER_REGEX, ALL_CAPS_UNIT_REGEX, CHAPTER_NUMBER_REGEX):
+        m = pattern.match(line)
+        if m:
+            raw_num = m.group(1).lower()
+            u_num = ROMAN_TO_INT.get(raw_num, raw_num)
+            raw_title = m.group(2)
+            title = clean_text(raw_title) if raw_title else None
+            return f"Unit {u_num}", title
+
+    # Check for all-caps standalone lines like "UNIT 1 INTRODUCTION TO OS"
+    if line.isupper() and len(line) <= 90:
+        for p in (r'\bUNIT\s*([0-9IVXLCDM]+)\b', r'\bMODULE\s*([0-9IVXLCDM]+)\b', r'\bCHAPTER\s*([0-9IVXLCDM]+)\b'):
+            m = re.search(p, line)
+            if m:
+                raw_num = m.group(1).lower()
+                u_num = ROMAN_TO_INT.get(raw_num, raw_num)
+                remainder = clean_text(re.sub(p, '', line).strip(' :-–—'))
+                return f"Unit {u_num}", remainder or None
+
+    return None
 
 
 def detect_marks_in_text(text: str) -> Optional[int]:
@@ -287,11 +350,37 @@ def enrich_question(q: Dict) -> Dict:
         q['unit'] = cls['unit']
 
     q['question_type'] = cls['question_type']
-    q['confidence'] = cls['confidence']
     q['classification_source'] = 'ai'
 
+    # Determine unit confidence source
+    unit_source = q.get('confidence_source')
+    if not q.get('unit'):
+        if cls.get('unit'):
+            q['unit'] = cls['unit']
+            unit_source = 'regex_match'
+        else:
+            unit_source = 'default'
+    elif not unit_source:
+        unit_source = 'position_inferred'
+
+    q['confidence_source'] = unit_source
+    unit_conf = CONFIDENCE_SOURCES.get(unit_source, 0.50)
+
+    ai_meta = cls['metadata']['ai']
+    overall_conf = round(
+        (ai_meta['blooms_confidence'] + ai_meta['difficulty_confidence'] + ai_meta['qt_confidence'] + unit_conf) / 4,
+        3
+    )
+
+    q['confidence'] = overall_conf
+
     existing_meta = q.get('metadata', {}) or {}
-    existing_meta['ai'] = cls['metadata']['ai']
+    existing_meta['ai'] = ai_meta
+    existing_meta['ai']['unit_confidence'] = unit_conf
+    existing_meta['ai']['unit_source'] = unit_source
+    existing_meta['ai']['overall_confidence'] = overall_conf
+    existing_meta['confidence'] = overall_conf
+    existing_meta['confidence_source'] = unit_source
     q['metadata'] = existing_meta
 
     return q
@@ -309,6 +398,7 @@ def parse_structured_document(lines: List[str]) -> List[Dict]:
     questions = []
     current_unit = None
     current_topic = None
+    current_unit_source = None
     current_q = None
 
     for line in lines:
@@ -316,17 +406,14 @@ def parse_structured_document(lines: List[str]) -> List[Dict]:
         if not cleaned:
             continue
 
-        # 1. Check for Unit / Module heading (e.g. "Unit 1 – Introduction to Computer Network...")
-        u_m = UNIT_HEADER_REGEX.match(cleaned)
-        if u_m:
+        # 1. Check for Unit / Module heading (e.g. "Unit 1 – Introduction to Computer Network...", ALL CAPS, or Chapter headings)
+        unit_info = detect_unit_header(cleaned)
+        if unit_info:
             if current_q:
                 questions.append(current_q)
                 current_q = None
-            u_raw = u_m.group(1).lower()
-            u_num = ROMAN_TO_INT.get(u_raw, u_raw)
-            current_unit = f"Unit {u_num}"
-            raw_title = u_m.group(2)
-            current_topic = clean_text(raw_title) if raw_title else None
+            current_unit, current_topic = unit_info
+            current_unit_source = 'document_header'
             continue
 
         # 2. Check for Focus / Syllabus line (e.g. "Focus: Networking fundamentals...")
@@ -352,6 +439,7 @@ def parse_structured_document(lines: List[str]) -> List[Dict]:
                 'difficulty': None,
                 'topic': current_topic or 'General',
                 'unit': current_unit,
+                'confidence_source': current_unit_source if current_unit else 'position_inferred',
                 'blooms_level': None,
                 'co': None,
                 'question_type': None,
@@ -450,7 +538,13 @@ def extract_from_excel(content: bytes) -> List[Dict]:
             difficulty = None
 
         topic = str(row_dict.get('topic') or row_dict.get('chapter') or '') or None
-        unit = str(row_dict.get('unit') or row_dict.get('module') or '') or None
+
+        # Directly detect and map unit / chapter / module spreadsheet columns
+        unit_col = next((h for h in headers if h in ('unit', 'module', 'chapter', 'unit_no', 'unit_number', 'unit_name', 'module_no', 'chapter_no')), None)
+        raw_unit_val = row_dict.get(unit_col) if unit_col else None
+        unit = normalize_unit_string(raw_unit_val) if raw_unit_val else None
+        confidence_source = 'spreadsheet_column' if unit else None
+
         co = str(row_dict.get('co') or row_dict.get('course outcome') or '') or None
         blooms_raw = str(row_dict.get('blooms') or row_dict.get("bloom's") or row_dict.get('bloom level') or '') or None
 
@@ -460,6 +554,7 @@ def extract_from_excel(content: bytes) -> List[Dict]:
             'difficulty': difficulty,
             'topic': topic,
             'unit': unit,
+            'confidence_source': confidence_source,
             'co': co,
             'blooms_level': blooms_raw,
             'question_type': None,
@@ -496,7 +591,13 @@ def extract_from_csv(content: bytes) -> List[Dict]:
             difficulty = None
 
         topic = row_lower.get('topic') or row_lower.get('chapter') or None
-        unit = row_lower.get('unit') or row_lower.get('module') or None
+
+        # Directly detect and map unit / chapter / module spreadsheet columns
+        unit_key = next((k for k in row_lower if k in ('unit', 'module', 'chapter', 'unit_no', 'unit_number', 'unit_name', 'module_no', 'chapter_no')), None)
+        raw_unit_val = row_lower.get(unit_key) if unit_key else None
+        unit = normalize_unit_string(raw_unit_val) if raw_unit_val else None
+        confidence_source = 'spreadsheet_column' if unit else None
+
         co = row_lower.get('co') or row_lower.get('course outcome') or None
         blooms_raw = row_lower.get('blooms') or row_lower.get("bloom's") or None
 
@@ -506,6 +607,7 @@ def extract_from_csv(content: bytes) -> List[Dict]:
             'difficulty': difficulty,
             'topic': topic,
             'unit': unit,
+            'confidence_source': confidence_source,
             'co': co,
             'blooms_level': blooms_raw,
             'question_type': None,
@@ -528,6 +630,11 @@ async def root():
     return {'message': 'Exam Parser Service is running', 'version': '3.1'}
 
 
+@app.get('/health')
+async def health_check():
+    return {'status': 'ok', 'service': 'parser', 'version': '3.1'}
+
+
 @app.post('/parse-document')
 async def parse_document(file: UploadFile = File(...)):
     """
@@ -535,8 +642,46 @@ async def parse_document(file: UploadFile = File(...)):
     fully structured and classified questions with Unit, Topic,
     Bloom's level, difficulty, and question type.
     """
-    content = await file.read()
+    MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+    VALID_EXTENSIONS = {'.docx', '.pdf', '.xlsx', '.xls', '.csv'}
+
     filename = (file.filename or '').lower()
+    content = await file.read()
+
+    # 1. Size Validation
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail='Uploaded file is empty (0 bytes).')
+    if len(content) > MAX_FILE_SIZE:
+        size_mb = len(content) / (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f'File size ({size_mb:.2f} MB) exceeds maximum allowed limit of 25 MB.'
+        )
+
+    # 2. Extension / Format Validation
+    ext = os.path.splitext(filename)[1]
+    if ext not in VALID_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f'Unsupported file extension "{ext}". Supported formats: DOCX, PDF, XLSX, XLS, CSV'
+        )
+
+    # 3. Content Type Validation (warning/check)
+    if file.content_type:
+        allowed_mimes = [
+            'application/vnd.openxmlformats-officedocument',
+            'application/msword',
+            'application/pdf',
+            'application/vnd.ms-excel',
+            'text/csv',
+            'text/plain',
+            'application/octet-stream',
+        ]
+        if not any(file.content_type.startswith(m) for m in allowed_mimes):
+            raise HTTPException(
+                status_code=400,
+                detail=f'Invalid content MIME type "{file.content_type}". Expected document or spreadsheet MIME.'
+            )
 
     try:
         if filename.endswith('.docx'):

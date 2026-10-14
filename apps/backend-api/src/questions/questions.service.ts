@@ -47,6 +47,46 @@ export class QuestionsService {
     }
 
     // -------------------------------------------------------------------------
+    // READ: Questions needing teacher review (low confidence AI classifications)
+    // -------------------------------------------------------------------------
+    async findNeedsReview(bankId?: string) {
+        let query = this.supabaseService.getClient()
+            .from('questions')
+            .select(`
+                id,
+                bank_id,
+                text,
+                marks,
+                difficulty,
+                topic,
+                unit,
+                co,
+                blooms_level,
+                question_type,
+                classification_source,
+                metadata,
+                image_url,
+                created_at
+            `)
+            .eq('classification_source', 'ai')
+            .order('created_at', { ascending: false });
+
+        if (bankId) {
+            query = query.eq('bank_id', bankId);
+        }
+
+        const { data, error } = await query;
+        if (error) throw new HttpException(error.message, HttpStatus.BAD_GATEWAY);
+
+        const list = data ?? [];
+        return list.filter((item: any) => {
+            const conf = item.metadata?.confidence ?? item.metadata?.ai?.overall_confidence;
+            if (conf == null) return true;
+            return Number(conf) < 0.6;
+        });
+    }
+
+    // -------------------------------------------------------------------------
     // READ: Single question
     // -------------------------------------------------------------------------
     async findOne(id: string) {
@@ -193,8 +233,9 @@ export class QuestionsService {
         // 2. Map parser output → DB columns (all intelligence fields preserved)
         const rows = questions.map((q) => {
             const meta = q.metadata || {};
-            // Ensure 'confidence' is in metadata for later retrieval
+            // Ensure 'confidence' and 'confidence_source' are in metadata for later retrieval
             if (q.confidence != null) meta.confidence = q.confidence;
+            if (q.confidence_source != null) meta.confidence_source = q.confidence_source;
 
             return {
                 bank_id: bankId,
@@ -246,6 +287,35 @@ export class QuestionsService {
         }
 
         const { questions: saved, bankId } = await this.bulkCreate(questions, file.originalname);
+
+        // Upload original question bank file to Supabase Storage bucket 'question-banks'
+        if (bankId && file.buffer) {
+            try {
+                const storagePath = `${bankId}/${file.originalname}`;
+                const { error: storageError } = await this.supabaseService
+                    .getClient()
+                    .storage
+                    .from('question-banks')
+                    .upload(storagePath, file.buffer, {
+                        contentType: file.mimetype,
+                        upsert: true,
+                    });
+
+                if (storageError) {
+                    console.warn(`[Supabase Storage] Note: ${storageError.message}`);
+                } else {
+                    // Save storage path to question_banks if column exists
+                    await this.supabaseService
+                        .getClient()
+                        .from('question_banks')
+                        .update({ storage_path: storagePath } as any)
+                        .eq('id', bankId);
+                }
+            } catch (storageErr: any) {
+                console.warn('[Supabase Storage] Bypassed storage upload:', storageErr.message);
+            }
+        }
+
         return {
             message: 'Questions parsed and saved successfully.',
             total: saved.length,

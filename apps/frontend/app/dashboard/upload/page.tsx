@@ -6,8 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Upload, FileSpreadsheet, CheckCircle, Clock, Trash2, CloudUpload, AlertCircle, FileText, FileUp, Sparkles } from 'lucide-react';
 import Link from 'next/link';
-
-const BACKEND_URL = 'http://localhost:3001';
+import { apiFetch } from '@/lib/api';
 
 type UploadStatus = 'queued' | 'uploading' | 'done' | 'error';
 
@@ -41,7 +40,7 @@ export default function UploadPage() {
     useEffect(() => {
         const fetchBanks = async () => {
             try {
-                const res = await fetch(`${BACKEND_URL}/questions/banks`);
+                const res = await apiFetch('/questions/banks');
                 if (res.ok) {
                     const data = await res.json();
                     const existingFiles: UploadedFile[] = data.map((b: any) => ({
@@ -76,7 +75,7 @@ export default function UploadPage() {
             const form = new FormData();
             form.append('file', rawFile);
 
-            const res = await fetch(`${BACKEND_URL}/questions/upload`, {
+            const res = await apiFetch('/questions/upload', {
                 method: 'POST',
                 body: form,
             });
@@ -249,7 +248,7 @@ export default function UploadPage() {
                                                     setFiles((prev) => prev.filter((f) => f.id !== file.id));
                                                     // Best-effort delete on the backend
                                                     try {
-                                                        await fetch(`${BACKEND_URL}/questions/banks/${file.id}`, {
+                                                        await apiFetch(`/questions/banks/${file.id}`, {
                                                             method: 'DELETE',
                                                         });
                                                     } catch (err) {

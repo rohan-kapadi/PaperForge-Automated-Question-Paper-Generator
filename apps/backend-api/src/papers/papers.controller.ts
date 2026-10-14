@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, Res, NotFoundException } from '@nestjs/common';
 import type { Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { PapersService, GeneratePaperDto, UpdatePaperStatusDto, ReplaceQuestionDto } from './papers.service';
 
 @Controller('papers')
@@ -7,6 +8,7 @@ export class PapersController {
     constructor(private readonly papersService: PapersService) { }
 
     @Post('generate')
+    @Throttle({ default: { limit: 30, ttl: 60000 } })
     generate(@Body() dto: GeneratePaperDto) {
         return this.papersService.generate(dto);
     }
@@ -82,6 +84,11 @@ export class PapersController {
 
     @Post(':id/replace')
     replaceQuestion(@Param('id') id: string, @Body() dto: ReplaceQuestionDto) {
+        return this.papersService.replaceQuestion(id, dto);
+    }
+
+    @Post(':id/replace-question')
+    replaceQuestionAlias(@Param('id') id: string, @Body() dto: ReplaceQuestionDto) {
         return this.papersService.replaceQuestion(id, dto);
     }
 }

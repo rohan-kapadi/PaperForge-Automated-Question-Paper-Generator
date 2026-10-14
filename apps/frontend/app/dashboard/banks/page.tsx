@@ -20,11 +20,11 @@ import {
     Loader2,
     CloudUpload,
     AlertCircle,
-    ArrowRight
+    ArrowRight,
+    RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { apiFetch } from '@/lib/api';
 
 interface QuestionBank {
     id: string;
@@ -54,6 +54,8 @@ export default function QuestionBanksPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedSubject, setSelectedSubject] = useState('all');
     const [showUploadModal, setShowUploadModal] = useState(false);
+    const [reanalyzingBankId, setReanalyzingBankId] = useState<string | null>(null);
+    const [reanalyzeToast, setReanalyzeToast] = useState<string | null>(null);
 
     // Upload state
     const [isUploading, setIsUploading] = useState(false);
@@ -64,7 +66,7 @@ export default function QuestionBanksPage() {
 
     const fetchBanks = async () => {
         try {
-            const res = await fetch(`${BACKEND_URL}/questions/banks`);
+            const res = await apiFetch('/questions/banks');
             if (res.ok) {
                 const data = await res.json();
                 setBanks(data);
@@ -89,7 +91,7 @@ export default function QuestionBanksPage() {
             const form = new FormData();
             form.append('file', file);
 
-            const res = await fetch(`${BACKEND_URL}/questions/upload`, {
+            const res = await apiFetch('/questions/upload', {
                 method: 'POST',
                 body: form,
             });
@@ -119,13 +121,37 @@ export default function QuestionBanksPage() {
         }
 
         try {
-            const res = await fetch(`${BACKEND_URL}/questions/banks/${bankId}`, { method: 'DELETE' });
+            const res = await apiFetch(`/questions/banks/${bankId}`, { method: 'DELETE' });
             if (res.ok) {
                 setBanks(prev => prev.filter(b => b.id !== bankId));
             }
         } catch (err) {
             console.error('Failed to delete bank:', err);
             alert('Failed to delete question bank.');
+        }
+    };
+
+    const handleReanalyzeBank = async (bankId: string, bankName: string) => {
+        setReanalyzingBankId(bankId);
+        setReanalyzeToast(null);
+        try {
+            const res = await apiFetch(`/questions/analyze-missing?bankId=${bankId}`, {
+                method: 'POST',
+            });
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || 'Failed to re-analyze questions');
+            }
+            const data = await res.json();
+            const count = data.processed ?? data.analyzed ?? data.total_found ?? 0;
+            setReanalyzeToast(`Successfully re-classified ${count} questions for "${bankName}"!`);
+            fetchBanks();
+            setTimeout(() => setReanalyzeToast(null), 4500);
+        } catch (err: any) {
+            console.error('Re-analyze bank error:', err);
+            alert(err.message || 'Failed to re-analyze question bank.');
+        } finally {
+            setReanalyzingBankId(null);
         }
     };
 
@@ -160,6 +186,18 @@ export default function QuestionBanksPage() {
                     </Link>
                 </div>
             </div>
+
+            {reanalyzeToast && (
+                <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between text-amber-300 text-sm animate-in fade-in">
+                    <span className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <span>{reanalyzeToast}</span>
+                    </span>
+                    <button onClick={() => setReanalyzeToast(null)} className="text-amber-400 hover:text-white">
+                        ✕
+                    </button>
+                </div>
+            )}
 
             {/* Quick Upload Expandable / Modal */}
             <AnimatePresence>
@@ -331,16 +369,31 @@ export default function QuestionBanksPage() {
                                     </span>
                                 </div>
 
-                                <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
-                                    <Link
-                                        href={`/dashboard/library?bankId=${bank.id}`}
-                                        className="text-xs text-slate-400 hover:text-white transition-colors"
-                                    >
-                                        Browse Questions
-                                    </Link>
+                                <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
+                                    <div className="flex items-center space-x-2.5">
+                                        <Link
+                                            href={`/dashboard/library?bankId=${bank.id}`}
+                                            className="text-xs text-slate-400 hover:text-white transition-colors"
+                                        >
+                                            Browse
+                                        </Link>
+                                        <button
+                                            onClick={() => handleReanalyzeBank(bank.id, bank.name)}
+                                            disabled={reanalyzingBankId === bank.id}
+                                            className="text-xs text-slate-400 hover:text-amber-400 flex items-center gap-1 transition-colors disabled:opacity-50"
+                                            title="Re-run AI classification on unconfirmed questions in this bank"
+                                        >
+                                            {reanalyzingBankId === bank.id ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                                            ) : (
+                                                <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                                            )}
+                                            Re-Analyze
+                                        </button>
+                                    </div>
                                     <Link href={`/dashboard/generate?bankId=${bank.id}&subject=${encodeURIComponent(bank.subject || '')}`}>
                                         <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold h-8 text-xs">
-                                            <Sparkles className="w-3.5 h-3.5 mr-1" /> Generate Paper
+                                            <Sparkles className="w-3.5 h-3.5 mr-1" /> Generate
                                         </Button>
                                     </Link>
                                 </div>

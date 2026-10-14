@@ -20,4 +20,27 @@ export class SupabaseService {
     getClient(): SupabaseClient {
         return this.supabase;
     }
+
+    getClientForUser(jwt: string): SupabaseClient {
+        const supabaseUrl = this.configService.get<string>('SUPABASE_URL')!;
+        const supabaseAnonKey = this.configService.get<string>('SUPABASE_ANON_KEY')!;
+
+        return createClient(supabaseUrl, supabaseAnonKey, {
+            global: {
+                headers: {
+                    Authorization: `Bearer ${jwt}`,
+                },
+            },
+        });
+    }
+
+    getAdminClient(): SupabaseClient {
+        const supabaseUrl = this.configService.get<string>('SUPABASE_URL')!;
+        const serviceRoleKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
+
+        if (serviceRoleKey) {
+            return createClient(supabaseUrl, serviceRoleKey);
+        }
+        return this.supabase;
+    }
 }
